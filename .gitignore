@@ -1,0 +1,31 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+work/
+
+# Личные игровые данные, повторы и обученные локально модели
+data/*
+!data/.gitkeep
+models/*
+!models/.gitkeep
+
+# Локальные настройки и секреты
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.log
+
+# Инструменты разработки и отчёты
+.idea/
+.vscode/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Системные файлы
+.DS_Store
+Thumbs.db
