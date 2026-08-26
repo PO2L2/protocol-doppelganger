@@ -1,0 +1,6 @@
+--index-url https://download.pytorch.org/whl/cu130
+--extra-index-url https://pypi.org/simple
+
+pygame==2.6.1
+numpy>=2.0,<3
+torch==2.13.0+cu130
