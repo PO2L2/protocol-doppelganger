@@ -350,6 +350,15 @@ class ContractTests(unittest.TestCase):
         game._confirm_player_selection()
         self.assertEqual(game.state, "weapon_select")
 
+    def test_player_launcher_uses_lightweight_binary_dependency(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+        requirements = (project_root / "requirements-player.txt").read_text(encoding="utf-8").splitlines()
+        self.assertEqual([line for line in requirements if line.strip()], ["pygame==2.6.1"])
+        launcher = (project_root / "start_game.bat").read_text(encoding="utf-8")
+        self.assertIn("--only-binary=:all:", launcher)
+        self.assertIn("Python 3.14 is not supported", launcher)
+        self.assertNotIn("pip install -r requirements.txt", launcher)
+
     def test_interactive_tutorial_starts_after_pages(self) -> None:
         game = DigitalTwinGame()
         game._start_interactive_tutorial()

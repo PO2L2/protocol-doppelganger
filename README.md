@@ -6,14 +6,24 @@
 
 ## Быстрый запуск на Windows
 
-Дважды щёлкните `start_game.bat`. При первом запуске скрипт создаст локальное Python-окружение и установит Pygame, NumPy и PyTorch с CUDA 13.0.
+Установите 64-битный Python 3.11 (также поддерживаются 3.12 и 3.13), а затем дважды щёлкните `start_game.bat`. При первом запуске скрипт автоматически выберет поддерживаемую версию Python, создаст локальное окружение и установит только Pygame. Этого достаточно, чтобы играть и собирать датасет: при отсутствии PyTorch игра использует резервную MLP.
+
+Python 3.14 пока не подходит для запуска: у закреплённой версии Pygame нет готового Windows-пакета для этой версии. Если папка `.venv` уже была создана через Python 3.14, удалите только `.venv` и снова запустите `start_game.bat` после установки Python 3.11.
+
+Для обучения полной GRU на своём компьютере один раз запустите `install_ai.bat`. Он отдельно установит NumPy и PyTorch с CUDA 13.0. Участникам, которые только проходят игру и возвращают папку `data`, этот большой пакет не нужен.
 
 Ручной запуск:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-player.txt
 .\.venv\Scripts\python.exe run_game.py
+```
+
+Полная установка ИИ из терминала:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 Переобучить модели на уже сохранённых прохождениях без запуска игры:
