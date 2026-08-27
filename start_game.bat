@@ -17,6 +17,14 @@ if not errorlevel 1 (
 )
 
 if not defined PYTHON_EXE (
+    py -3.10 -c "import sys" >nul 2>nul
+    if not errorlevel 1 (
+        set "PYTHON_EXE=py"
+        set "PYTHON_ARG=-3.10"
+    )
+)
+
+if not defined PYTHON_EXE (
     py -3.12 -c "import sys" >nul 2>nul
     if not errorlevel 1 (
         set "PYTHON_EXE=py"
@@ -33,7 +41,7 @@ if not defined PYTHON_EXE (
 )
 
 if not defined PYTHON_EXE (
-    python -c "import sys; raise SystemExit(0 if (3, 11) <= sys.version_info[:2] <= (3, 13) else 1)" >nul 2>nul
+    python -c "import sys; raise SystemExit(0 if (3, 10) <= sys.version_info[:2] <= (3, 13) else 1)" >nul 2>nul
     if not errorlevel 1 set "PYTHON_EXE=python"
 )
 
@@ -44,7 +52,7 @@ echo [2/3] Creating the local environment...
 if errorlevel 1 goto :venv_error
 
 :check_venv
-"%VENV_PYTHON%" -c "import sys; raise SystemExit(0 if (3, 11) <= sys.version_info[:2] <= (3, 13) else 1)" >nul 2>nul
+"%VENV_PYTHON%" -c "import sys; raise SystemExit(0 if (3, 10) <= sys.version_info[:2] <= (3, 13) else 1)" >nul 2>nul
 if errorlevel 1 goto :unsupported_venv
 
 "%VENV_PYTHON%" -c "import pygame; raise SystemExit(0 if pygame.version.ver == '2.6.1' else 1)" >nul 2>nul
@@ -71,9 +79,9 @@ exit /b %GAME_EXIT%
 
 :python_error
 echo.
-echo ERROR: Python 3.11, 3.12, or 3.13 was not found.
+echo ERROR: Python 3.10, 3.11, 3.12, or 3.13 was not found.
 echo Python 3.14 is not supported by pygame 2.6.1 on Windows.
-echo Install 64-bit Python 3.11 from https://www.python.org/downloads/
+echo Install 64-bit Python 3.10 or 3.11 from https://www.python.org/downloads/
 echo Enable "Add python.exe to PATH" and "Python Launcher" during setup.
 pause
 exit /b 1
@@ -81,7 +89,7 @@ exit /b 1
 :unsupported_venv
 echo.
 echo ERROR: The existing .venv uses an unsupported Python version.
-echo Delete the .venv folder, install Python 3.11, and run this file again.
+echo Delete the .venv folder, install Python 3.10 or 3.11, and run this file again.
 pause
 exit /b 1
 

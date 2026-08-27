@@ -11,10 +11,10 @@ if not exist "%VENV_PYTHON%" (
     exit /b 1
 )
 
-"%VENV_PYTHON%" -c "import sys; raise SystemExit(0 if (3, 11) <= sys.version_info[:2] <= (3, 13) else 1)" >nul 2>nul
+"%VENV_PYTHON%" -c "import sys; raise SystemExit(0 if (3, 10) <= sys.version_info[:2] <= (3, 13) else 1)" >nul 2>nul
 if errorlevel 1 (
     echo ERROR: The existing .venv uses an unsupported Python version.
-    echo Delete the .venv folder, install Python 3.11, and run start_game.bat again.
+    echo Delete the .venv folder, install Python 3.10 or 3.11, and run start_game.bat again.
     pause
     exit /b 1
 )

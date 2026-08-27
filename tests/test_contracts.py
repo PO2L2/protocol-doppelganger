@@ -356,6 +356,8 @@ class ContractTests(unittest.TestCase):
         self.assertEqual([line for line in requirements if line.strip()], ["pygame==2.6.1"])
         launcher = (project_root / "start_game.bat").read_text(encoding="utf-8")
         self.assertIn("--only-binary=:all:", launcher)
+        self.assertIn('PYTHON_ARG=-3.10', launcher)
+        self.assertIn("(3, 10) <= sys.version_info[:2] <= (3, 13)", launcher)
         self.assertIn("Python 3.14 is not supported", launcher)
         self.assertNotIn("pip install -r requirements.txt", launcher)
 
