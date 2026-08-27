@@ -159,16 +159,33 @@ class Player:
         if self.melee_cooldown > 0 or self.energy < melee_cost:
             return False, None
         direction = safe_normalize(target - self.position)
+        candidates = [
+            enemy
+            for enemy in enemies
+            if enemy.alive and enemy.position.distance_to(self.position) <= spec.melee_range + enemy.radius
+        ]
+        attack_facing = direction if direction.length_squared() else self.facing
+        aimed_candidates = [
+            enemy
+            for enemy in candidates
+            if not (enemy.position - self.position).length_squared()
+            or safe_normalize(enemy.position - self.position).dot(attack_facing) > 0.15
+        ]
+        if candidates and not aimed_candidates:
+            nearest = min(candidates, key=lambda enemy: enemy.position.distance_squared_to(self.position))
+            direction = safe_normalize(nearest.position - self.position)
         if direction.length_squared():
             self.facing = direction
         self.energy -= melee_cost
         self.melee_cooldown = (0.38 if self.weapon == WeaponType.BLADES else 0.62) * self.cooldown_multiplier
         self.last_action = PlayerAction.MELEE_ATTACK
         hit = False
-        for enemy in enemies:
+        for enemy in candidates:
             offset = enemy.position - self.position
-            if offset.length() <= spec.melee_range and (not offset.length_squared() or safe_normalize(offset).dot(self.facing) > 0.15):
-                enemy.take_damage(spec.melee_damage * self.damage_multiplier, self.position)
+            touching = offset.length() <= self.radius + enemy.radius + 10
+            in_attack_arc = not offset.length_squared() or safe_normalize(offset).dot(self.facing) > 0.05
+            if touching or in_attack_arc:
+                enemy.take_damage(spec.melee_damage * self.damage_multiplier, self.position, melee=True)
                 hit = True
         return hit, SlashEffect(self.position.copy(), COLORS["player"], 42)
 
@@ -333,12 +350,12 @@ class Enemy:
         }
         return colors.get(self.kind, COLORS["enemy"])
 
-    def take_damage(self, amount: float, source_position: pygame.Vector2 | None = None) -> float:
+    def take_damage(self, amount: float, source_position: pygame.Vector2 | None = None, *, melee: bool = False) -> float:
         applied = amount
         if self.kind == "shield" and source_position is not None:
             toward_source = safe_normalize(source_position - self.position)
             if toward_source.dot(self.facing) > 0.2:
-                applied *= 0.22
+                applied *= 0.48 if melee else 0.22
         self.health = max(0.0, self.health - applied)
         self.recent_damage = 0.12
         return applied

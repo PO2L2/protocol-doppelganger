@@ -404,6 +404,26 @@ class ContractTests(unittest.TestCase):
         projectiles = player.fire(pygame.Vector2(500, 300))
         self.assertEqual(len(projectiles), 5)
 
+    def test_melee_hits_enemy_while_models_overlap(self) -> None:
+        player = Player((500, 350))
+        enemy = Enemy((508, 350), "assault")
+        player.facing = pygame.Vector2(1, 0)
+        original_health = enemy.health
+        hit, _ = player.melee(pygame.Vector2(300, 350), [enemy])
+        self.assertTrue(hit)
+        self.assertLess(enemy.health, original_health)
+
+    def test_melee_auto_aims_inward_at_top_right_wall(self) -> None:
+        arena = Arena(1)
+        player = Player((arena.bounds.right - 18, arena.bounds.top + 18))
+        enemy = Enemy((player.position.x - 42, player.position.y + 5), "shield")
+        enemy.facing = pygame.Vector2(1, 0)
+        original_health = enemy.health
+        outside_cursor = pygame.Vector2(arena.bounds.right + 200, arena.bounds.top - 200)
+        hit, _ = player.melee(outside_cursor, [enemy])
+        self.assertTrue(hit)
+        self.assertLess(enemy.health, original_health)
+
     def test_main_menu_has_three_actions(self) -> None:
         game = DigitalTwinGame()
         self.assertEqual(len(game._menu_button_rects()), 3)

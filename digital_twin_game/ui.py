@@ -13,6 +13,11 @@ def get_font(size: int, bold: bool = False) -> pygame.font.Font:
     return pygame.font.SysFont("segoeui", size, bold=bold)
 
 
+@lru_cache(maxsize=768)
+def _render_text(text: str, size: int, color: tuple[int, int, int], bold: bool) -> pygame.Surface:
+    return get_font(size, bold).render(text, True, color)
+
+
 def draw_text(
     surface: pygame.Surface,
     text: str,
@@ -23,7 +28,9 @@ def draw_text(
     anchor: str = "topleft",
 ) -> pygame.Rect:
     scale = surface_scale(surface)
-    image = get_font(max(1, round(size * scale)), bold).render(text, True, color or COLORS["text"])
+    physical_size = max(1, round(size * scale))
+    text_color = color or COLORS["text"]
+    image = _render_text(text, physical_size, text_color, bold)
     rect = image.get_rect()
     setattr(rect, anchor, scale_point(surface, position))
     surface.blit(image, rect)

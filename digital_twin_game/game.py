@@ -247,7 +247,11 @@ class DigitalTwinGame:
         render_size = self.viewport.rect.size
         render_scale = render_size[0] / WIDTH
         self.render_scale = render_scale
-        self.screen = register_surface(pygame.Surface(render_size).convert(), render_scale)
+        renders_directly_to_display = self.viewport.rect.topleft == (0, 0) and render_size == self.display_surface.get_size()
+        if renders_directly_to_display:
+            self.screen = register_surface(self.display_surface, render_scale)
+        else:
+            self.screen = register_surface(pygame.Surface(render_size).convert(), render_scale)
         self.world_surface = register_surface(pygame.Surface(render_size).convert(), render_scale)
         self.alpha_surface = register_surface(
             pygame.Surface(render_size, pygame.SRCALPHA).convert_alpha(),
@@ -270,6 +274,8 @@ class DigitalTwinGame:
         self._refresh_viewport()
 
     def _present_frame(self) -> None:
+        if self.screen is self.display_surface:
+            return
         self.display_surface.fill((3, 5, 10))
         self.display_surface.blit(self.screen, self.viewport.rect)
 
@@ -1988,7 +1994,8 @@ class DigitalTwinGame:
         self.player.draw(world)
         self.combat_fx.draw(world, pygame.Vector2())
         offset = self.combat_fx.offset()
-        self.screen.fill(COLORS["background"])
+        if offset.length_squared():
+            self.screen.fill(COLORS["background"])
         logical_blit(self.screen, world, offset)
         self._draw_hud()
         if self.round_clear_timer > 0:
