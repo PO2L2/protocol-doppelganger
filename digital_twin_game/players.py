@@ -65,6 +65,36 @@ class PlayerRegistry:
         self.save()
         return profile
 
+    def rename(self, player_id: str, name: str) -> PlayerProfileRecord:
+        cleaned = " ".join(name.strip().split())[:24]
+        if not cleaned:
+            raise ValueError("Имя игрока не может быть пустым")
+        duplicate = next(
+            (
+                profile
+                for profile in self.profiles
+                if profile.player_id != player_id and profile.name.casefold() == cleaned.casefold()
+            ),
+            None,
+        )
+        if duplicate is not None:
+            raise ValueError("Профиль с таким именем уже существует")
+        profile = next(profile for profile in self.profiles if profile.player_id == player_id)
+        profile.name = cleaned
+        profile.last_used_at = time.time()
+        self.save()
+        return profile
+
+    def delete(self, player_id: str) -> PlayerProfileRecord:
+        if len(self.profiles) <= 1:
+            raise ValueError("Нельзя удалить единственный профиль")
+        profile = next(profile for profile in self.profiles if profile.player_id == player_id)
+        self.profiles.remove(profile)
+        if self.active_id == player_id:
+            self.active_id = self.profiles[0].player_id
+        self.save()
+        return self.active
+
     def record_session(self, player_id: str) -> None:
         profile = next((profile for profile in self.profiles if profile.player_id == player_id), None)
         if profile is None:

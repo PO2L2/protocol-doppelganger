@@ -170,6 +170,20 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(loaded.active.name, "Алекс")
         self.assertEqual(loaded.active.session_count, 1)
 
+    def test_player_registry_renames_and_deletes_profiles(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "players.json"
+            registry = PlayerRegistry.load(path)
+            original_id = registry.active.player_id
+            second = registry.create("Второй игрок")
+            renamed = registry.rename(second.player_id, "Новое имя")
+            self.assertEqual(renamed.name, "Новое имя")
+            active = registry.delete(second.player_id)
+            self.assertEqual(active.player_id, original_id)
+            self.assertEqual(len(registry.profiles), 1)
+            with self.assertRaises(ValueError):
+                registry.delete(original_id)
+
     def test_quality_report_lists_missing_actions(self) -> None:
         collector = GameplayDataCollector(0.1)
         for _ in range(10):

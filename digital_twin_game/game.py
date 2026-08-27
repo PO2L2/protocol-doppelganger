@@ -4,6 +4,7 @@ import math
 import random
 import json
 import threading
+import ctypes
 
 import pygame
 
@@ -62,13 +63,27 @@ INTERACTIVE_TUTORIAL_STEPS = [
 ]
 
 
+def _enable_windows_dpi_awareness() -> None:
+    """Keep Windows display scaling from making fullscreen output blurry."""
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except (AttributeError, OSError):
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except (AttributeError, OSError):
+            pass
+
+
 class DigitalTwinGame:
     def __init__(self, action_model: ActionPredictionModel | None = None) -> None:
+        _enable_windows_dpi_awareness()
         pygame.init()
         pygame.display.set_caption(TITLE)
         self.fullscreen = True
         self.windowed_size = (WIDTH, HEIGHT)
-        self.display_surface = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        desktop_sizes = pygame.display.get_desktop_sizes()
+        self.desktop_size = desktop_sizes[0] if desktop_sizes else (WIDTH, HEIGHT)
+        self.display_surface = pygame.display.set_mode(self.desktop_size, pygame.FULLSCREEN | pygame.DOUBLEBUF)
         self.screen = pygame.Surface((WIDTH, HEIGHT)).convert()
         self.viewport = DisplayViewport((WIDTH, HEIGHT), self.display_surface.get_size())
         self.scaled_surface = pygame.Surface(self.viewport.rect.size).convert()
@@ -110,6 +125,8 @@ class DigitalTwinGame:
         self.player_select_index = max(0, self.player_registry.profiles.index(self.current_player))
         self.player_name_input = ""
         self.player_name_focused = False
+        self.player_management_mode = "create"
+        self.player_profile_notice = ""
         self.collector = GameplayDataCollector(SAMPLE_INTERVAL, self.current_player.player_id)
         self.data_quality: DataQualityReport = analyze_data_quality([])
         self.calibration_challenge = CalibrationChallenge(1)
@@ -233,7 +250,9 @@ class DigitalTwinGame:
             if current_size[0] >= 800 and current_size[1] >= 600:
                 self.windowed_size = current_size
             self.fullscreen = True
-            self.display_surface = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            desktop_sizes = pygame.display.get_desktop_sizes()
+            self.desktop_size = desktop_sizes[0] if desktop_sizes else self.desktop_size
+            self.display_surface = pygame.display.set_mode(self.desktop_size, pygame.FULLSCREEN | pygame.DOUBLEBUF)
         pygame.display.set_caption(TITLE)
         self._refresh_viewport()
 
@@ -242,7 +261,7 @@ class DigitalTwinGame:
         if self.viewport.rect.size == (WIDTH, HEIGHT):
             frame = self.screen
         else:
-            pygame.transform.smoothscale(self.screen, self.viewport.rect.size, self.scaled_surface)
+            pygame.transform.scale(self.screen, self.viewport.rect.size, self.scaled_surface)
             frame = self.scaled_surface
         self.display_surface.blit(frame, self.viewport.rect)
 
@@ -318,7 +337,10 @@ class DigitalTwinGame:
                     elif event.key == pygame.K_BACKSPACE:
                         self.player_name_input = self.player_name_input[:-1]
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                        self._confirm_player_selection()
+                        if self.player_management_mode == "delete_confirm":
+                            self._request_or_confirm_player_delete()
+                        else:
+                            self._confirm_player_selection()
                 elif self.state == "tutorial":
                     if event.key in (pygame.K_LEFT, pygame.K_a):
                         self._set_tutorial_page(self.tutorial_page - 1)
@@ -421,20 +443,34 @@ class DigitalTwinGame:
                         self.menu_selected = index
                         break
             elif self.state == "menu" and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self._profile_badge_rect().collidepoint(event.pos):
+                    self._open_player_select()
+                    continue
                 for index, rect in enumerate(self._menu_button_rects()):
                     if rect.collidepoint(event.pos):
                         self.menu_selected = index
                         self._activate_menu_option(index)
                         break
             elif self.state == "player_select" and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self._player_rename_rect().collidepoint(event.pos):
+                    self._begin_player_rename()
+                    continue
+                if self._player_delete_rect().collidepoint(event.pos):
+                    self._request_or_confirm_player_delete()
+                    continue
                 if self._player_name_input_rect().collidepoint(event.pos):
                     self.player_name_focused = True
+                    if self.player_management_mode != "rename":
+                        self.player_management_mode = "create"
+                        self.player_profile_notice = ""
                     pygame.key.start_text_input()
                 for index, rect in enumerate(self._player_card_rects()):
                     if rect.collidepoint(event.pos):
                         self.player_select_index = index
                         self.player_name_input = ""
                         self.player_name_focused = False
+                        self.player_management_mode = "create"
+                        self.player_profile_notice = ""
                         pygame.key.stop_text_input()
                         break
                 if self._player_continue_rect().collidepoint(event.pos):
@@ -502,6 +538,8 @@ class DigitalTwinGame:
         self.player_select_index = self._visible_player_profiles().index(self.current_player)
         self.player_name_input = ""
         self.player_name_focused = True
+        self.player_management_mode = "create"
+        self.player_profile_notice = ""
         pygame.key.start_text_input()
         self.state = "player_select"
 
@@ -521,13 +559,65 @@ class DigitalTwinGame:
 
     @staticmethod
     def _profile_badge_rect() -> pygame.Rect:
-        return pygame.Rect(WIDTH - 286, 18, 260, 38)
+        return pygame.Rect(WIDTH // 2 - 170, 246, 340, 42)
+
+    @staticmethod
+    def _player_rename_rect() -> pygame.Rect:
+        return pygame.Rect(700, 130, 160, 34)
+
+    @staticmethod
+    def _player_delete_rect() -> pygame.Rect:
+        return pygame.Rect(875, 130, 160, 34)
 
     def _player_card_rects(self) -> list[pygame.Rect]:
         visible = self._visible_player_profiles()
         return [pygame.Rect(245, 175 + index * 76, 790, 60) for index in range(len(visible))]
 
+    def _selected_player_profile(self) -> PlayerProfileRecord:
+        profiles = self._visible_player_profiles()
+        self.player_select_index = max(0, min(self.player_select_index, len(profiles) - 1))
+        return profiles[self.player_select_index]
+
+    def _begin_player_rename(self) -> None:
+        profile = self._selected_player_profile()
+        self.player_management_mode = "rename"
+        self.player_name_input = profile.name
+        self.player_name_focused = True
+        self.player_profile_notice = "Введите новое имя и нажмите «Сохранить имя»"
+        pygame.key.start_text_input()
+
+    def _request_or_confirm_player_delete(self) -> None:
+        profile = self._selected_player_profile()
+        if len(self.player_registry.profiles) <= 1:
+            self.player_profile_notice = "Нельзя удалить единственный профиль"
+            return
+        if self.player_management_mode != "delete_confirm":
+            self.player_management_mode = "delete_confirm"
+            self.player_name_input = ""
+            self.player_name_focused = False
+            self.player_profile_notice = f"Удалить профиль «{profile.name}»? Нажмите удаление ещё раз"
+            pygame.key.stop_text_input()
+            return
+        self.current_player = self.player_registry.delete(profile.player_id)
+        self.player_select_index = self._visible_player_profiles().index(self.current_player)
+        self.player_management_mode = "create"
+        self.player_profile_notice = "Профиль удалён. Собранные игровые данные сохранены"
+
     def _confirm_player_selection(self) -> None:
+        if self.player_management_mode == "rename":
+            try:
+                profile = self.player_registry.rename(self._selected_player_profile().player_id, self.player_name_input)
+            except ValueError as error:
+                self.player_profile_notice = str(error)
+                return
+            if profile.player_id == self.current_player.player_id:
+                self.current_player = profile
+            self.player_name_input = ""
+            self.player_name_focused = False
+            self.player_management_mode = "create"
+            self.player_profile_notice = "Имя профиля сохранено"
+            pygame.key.stop_text_input()
+            return
         if self.player_name_input.strip():
             self.current_player = self.player_registry.create(self.player_name_input)
         else:
@@ -1505,21 +1595,6 @@ class DigitalTwinGame:
 
     def _draw_menu(self) -> None:
         self.animated_background.draw(self.screen, 1.0)
-        profile_rect = self._profile_badge_rect()
-        pygame.draw.rect(self.screen, (10, 25, 38), profile_rect, border_radius=9)
-        pygame.draw.rect(self.screen, (40, 91, 103), profile_rect, 1, border_radius=9)
-        visible_profile_name = self.current_player.name
-        if len(visible_profile_name) > 18:
-            visible_profile_name = visible_profile_name[:17] + "…"
-        draw_text(
-            self.screen,
-            f"Профиль: {visible_profile_name}",
-            (profile_rect.left + 14, profile_rect.centery),
-            14,
-            COLORS["player"],
-            bold=True,
-            anchor="midleft",
-        )
         float_y = 0.0
         pulse = 0.65
         for index in range(3):
@@ -1531,6 +1606,22 @@ class DigitalTwinGame:
         draw_text(self.screen, "ДВОЙНИК", (WIDTH / 2 + 2, 108 + float_y), 68, glow, bold=True, anchor="midtop")
         draw_text(self.screen, "ДВОЙНИК", (WIDTH / 2, 105 + float_y), 68, COLORS["player"], bold=True, anchor="midtop")
         draw_text(self.screen, "Игра изучает твои привычки. Финальный противник — ты сам.", (WIDTH / 2, 198), 21, anchor="midtop")
+        profile_rect = self._profile_badge_rect()
+        profile_hovered = profile_rect.collidepoint(self._mouse_position())
+        pygame.draw.rect(self.screen, (17, 48, 59) if profile_hovered else (10, 25, 38), profile_rect, border_radius=9)
+        pygame.draw.rect(self.screen, COLORS["player"] if profile_hovered else (40, 91, 103), profile_rect, 1, border_radius=9)
+        visible_profile_name = self.current_player.name
+        if len(visible_profile_name) > 18:
+            visible_profile_name = visible_profile_name[:17] + "…"
+        draw_text(
+            self.screen,
+            f"ПРОФИЛЬ: {visible_profile_name}   •   ИЗМЕНИТЬ",
+            profile_rect.center,
+            14,
+            COLORS["player"],
+            bold=True,
+            anchor="center",
+        )
         labels = ["НАЧАТЬ ИГРУ", "РЕДАКТОР", "ОБУЧЕНИЕ МЕХАНИКАМ"]
         mouse_position = self._mouse_position()
         for index, (label, rect) in enumerate(zip(labels, self._menu_button_rects())):
@@ -1556,7 +1647,8 @@ class DigitalTwinGame:
         demo_color = COLORS["health"] if self.demo_mode else COLORS["muted"]
         demo_text = "ВКЛЮЧЁН" if self.demo_mode else "выключен"
         draw_text(self.screen, f"F9 — конкурсный демо-режим: {demo_text}", (WIDTH / 2, 634), 14, demo_color, bold=self.demo_mode, anchor="midtop")
-        draw_text(self.screen, "F11 — оконный режим   •   ESC — выход", (WIDTH / 2, 674), 14, COLORS["muted"], anchor="midtop")
+        display_mode_hint = "оконный режим" if self.fullscreen else "полноэкранный режим"
+        draw_text(self.screen, f"F11 — {display_mode_hint}   •   ESC — выход", (WIDTH / 2, 674), 14, COLORS["muted"], anchor="midtop")
 
     def _draw_player_select(self) -> None:
         self.animated_background.draw(self.screen, 0.72)
@@ -1571,6 +1663,22 @@ class DigitalTwinGame:
         )
         mouse = self._mouse_position()
         profiles = self._visible_player_profiles()
+        rename_rect = self._player_rename_rect()
+        delete_rect = self._player_delete_rect()
+        for rect, label, danger in (
+            (rename_rect, "ПЕРЕИМЕНОВАТЬ", False),
+            (delete_rect, "ПОДТВЕРДИТЬ" if self.player_management_mode == "delete_confirm" else "УДАЛИТЬ", True),
+        ):
+            hovered = rect.collidepoint(mouse)
+            if danger:
+                fill = (83, 35, 48) if hovered else (44, 27, 41)
+                border = COLORS["enemy"] if hovered or self.player_management_mode == "delete_confirm" else (95, 57, 72)
+            else:
+                fill = (22, 58, 65) if hovered else (18, 34, 50)
+                border = COLORS["player"] if hovered else (61, 82, 108)
+            pygame.draw.rect(self.screen, fill, rect, border_radius=8)
+            pygame.draw.rect(self.screen, border, rect, 1, border_radius=8)
+            draw_text(self.screen, label, rect.center, 12, COLORS["white"], bold=True, anchor="center")
         for index, (profile, rect) in enumerate(zip(profiles, self._player_card_rects())):
             selected = index == self.player_select_index and not self.player_name_input
             hovered = rect.collidepoint(mouse)
@@ -1588,9 +1696,13 @@ class DigitalTwinGame:
                 anchor="topright",
             )
         input_rect = self._player_name_input_rect()
+        if self.player_management_mode == "rename":
+            field_label = "ПЕРЕИМЕНОВАНИЕ — введите новое имя"
+        else:
+            field_label = "НОВЫЙ ПРОФИЛЬ — нажмите сюда и введите имя"
         draw_text(
             self.screen,
-            "НОВЫЙ ПРОФИЛЬ — нажмите сюда и введите имя",
+            field_label,
             (input_rect.left, input_rect.top - 25),
             14,
             COLORS["player"] if self.player_name_focused else COLORS["muted"],
@@ -1614,8 +1726,12 @@ class DigitalTwinGame:
         continue_rect = self._player_continue_rect()
         pygame.draw.rect(self.screen, (25, 65, 68), continue_rect, border_radius=11)
         pygame.draw.rect(self.screen, COLORS["player"], continue_rect, 2, border_radius=11)
-        draw_text(self.screen, "ENTER — ПРОДОЛЖИТЬ", continue_rect.center, 19, COLORS["white"], bold=True, anchor="center")
-        draw_text(self.screen, "ESC — главное меню", (WIDTH / 2, 706), 13, COLORS["muted"], anchor="midbottom")
+        continue_label = "СОХРАНИТЬ ИМЯ" if self.player_management_mode == "rename" else "ПРОДОЛЖИТЬ"
+        draw_text(self.screen, continue_label, continue_rect.center, 19, COLORS["white"], bold=True, anchor="center")
+        if self.player_profile_notice:
+            notice_color = COLORS["enemy"] if self.player_management_mode == "delete_confirm" else COLORS["warning"]
+            draw_text(self.screen, self.player_profile_notice, (WIDTH / 2, 690), 13, notice_color, anchor="midbottom")
+        draw_text(self.screen, "ESC — главное меню", (WIDTH / 2, 716), 13, COLORS["muted"], anchor="midbottom")
 
     def _draw_tutorial(self) -> None:
         pages = [
