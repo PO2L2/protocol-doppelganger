@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -26,7 +27,7 @@ from digital_twin_game.lab import load_sessions
 from digital_twin_game.model_interface import ACTION_COUNT, FEATURE_NAMES, PlaceholderPredictor
 from digital_twin_game.neural_model import NeuralActionModel
 from digital_twin_game.objectives import ObjectiveType, TrainingObjective
-from digital_twin_game.players import PlayerRegistry
+from digital_twin_game.players import PLAYER_NAME_MAX_LENGTH, PlayerRegistry
 from digital_twin_game.replay import ReplayRecorder
 from digital_twin_game.sequence_data import (
     SEQUENCE_LENGTH,
@@ -108,6 +109,19 @@ class ContractTests(unittest.TestCase):
         game._handle_events()
         self.assertEqual(game.player_name_input, "Игрок")
 
+    def test_player_name_pastes_from_clipboard_and_stops_at_sixty_characters(self) -> None:
+        game = DigitalTwinGame()
+        game._open_player_select()
+        with patch.object(DigitalTwinGame, "_clipboard_text", return_value="А" * 80):
+            pygame.event.post(
+                pygame.event.Event(
+                    pygame.KEYDOWN,
+                    {"key": pygame.K_v, "mod": pygame.KMOD_CTRL, "unicode": ""},
+                )
+            )
+            game._handle_events()
+        self.assertEqual(len(game.player_name_input), PLAYER_NAME_MAX_LENGTH)
+
     def test_real_neural_model_has_expected_architecture(self) -> None:
         model = NeuralActionModel(seed=1)
         self.assertEqual(model.LAYERS, (25, 64, 32, 10))
@@ -182,6 +196,12 @@ class ContractTests(unittest.TestCase):
             loaded = PlayerRegistry.load(path)
         self.assertEqual(loaded.active.name, "Алекс")
         self.assertEqual(loaded.active.session_count, 1)
+
+    def test_player_registry_allows_sixty_character_names(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            registry = PlayerRegistry.load(Path(directory) / "players.json")
+            profile = registry.create("Я" * 75)
+        self.assertEqual(len(profile.name), PLAYER_NAME_MAX_LENGTH)
 
     def test_player_registry_renames_and_deletes_profiles(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -389,6 +409,13 @@ class ContractTests(unittest.TestCase):
         rotated = pygame.Rect(editor.layout.obstacles[0])
         self.assertEqual(rotated.size, (40, 160))
         self.assertEqual(rotated.center, pygame.Rect(200, 200, 160, 40).center)
+
+    def test_editor_preview_uses_logical_fullscreen_mouse_position(self) -> None:
+        viewport = DisplayViewport((1280, 720), (2560, 1440))
+        logical_mouse = viewport.display_to_logical((2000, 800))
+        editor = ArenaEditor()
+        preview = editor.wall_preview_rect(logical_mouse)
+        self.assertEqual(preview.center, (1000, 400))
 
     def test_destructible_object_takes_damage(self) -> None:
         arena = Arena(1)

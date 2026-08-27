@@ -121,6 +121,14 @@ class ArenaEditor:
     def _snap(self, position: tuple[int, int], grid: int = 40) -> tuple[int, int]:
         return round(position[0] / grid) * grid, round(position[1] / grid) * grid
 
+    def wall_preview_rect(self, position: tuple[int, int]) -> pygame.Rect:
+        preview_x, preview_y = self._snap(position)
+        preview_width, preview_height = self.wall_size
+        preview = pygame.Rect(0, 0, preview_width, preview_height)
+        preview.center = (preview_x, preview_y)
+        preview.clamp_ip(self.bounds)
+        return preview
+
     def _place(self, position: tuple[int, int]) -> None:
         x, y = self._snap(position)
         if self.tool == 1:
@@ -201,11 +209,12 @@ class ArenaEditor:
             if point.distance_to(nearest_enemy[:2]) < 35:
                 self.layout.enemy_spawns.remove(nearest_enemy)
 
-    def draw(self, surface: pygame.Surface, draw_text, draw_background=None) -> None:
+    def draw(self, surface: pygame.Surface, draw_text, draw_background=None, mouse_position=None) -> None:
         if draw_background is None:
             surface.fill(COLORS["background"])
         else:
             draw_background(surface, 0.52)
+        mouse_position = pygame.mouse.get_pos() if mouse_position is None else mouse_position
         animation_time = pygame.time.get_ticks() / 1000.0
         grid_color = tuple(int(channel * 0.76) for channel in COLORS["grid"])
         for x in range(self.bounds.left, self.bounds.right + 1, 40):
@@ -242,12 +251,8 @@ class ArenaEditor:
         logical_draw.circle(surface, objective_color, objective, objective_radius, 2)
         logical_draw.line(surface, objective_color, (objective[0] - 8, objective[1]), (objective[0] + 8, objective[1]), 2)
         logical_draw.line(surface, objective_color, (objective[0], objective[1] - 8), (objective[0], objective[1] + 8), 2)
-        if self.edit_mode == "place" and self.tool == 1 and self.bounds.collidepoint(pygame.mouse.get_pos()):
-            preview_x, preview_y = self._snap(pygame.mouse.get_pos())
-            preview_width, preview_height = self.wall_size
-            preview = pygame.Rect(0, 0, preview_width, preview_height)
-            preview.center = (preview_x, preview_y)
-            preview.clamp_ip(self.bounds)
+        if self.edit_mode == "place" and self.tool == 1 and self.bounds.collidepoint(mouse_position):
+            preview = self.wall_preview_rect(mouse_position)
             logical_draw.rect(surface, (48, 75, 91), preview, 2, border_radius=5)
         draw_text(surface, "РЕДАКТОР АРЕН", (30, 18), 26, COLORS["player"], bold=True)
         tools = "1 Стена  2 Аптечка  3 Игрок  4 Враг  5 Цель  6 Контейнер  TAB Вид врага"

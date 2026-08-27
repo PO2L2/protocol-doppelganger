@@ -9,6 +9,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 
+PLAYER_NAME_MAX_LENGTH = 60
+
+
 @dataclass
 class PlayerProfileRecord:
     player_id: str
@@ -44,7 +47,7 @@ class PlayerRegistry:
         return next(profile for profile in self.profiles if profile.player_id == self.active_id)
 
     def create(self, name: str) -> PlayerProfileRecord:
-        cleaned = " ".join(name.strip().split())[:24]
+        cleaned = " ".join(name.strip().split())[:PLAYER_NAME_MAX_LENGTH]
         if not cleaned:
             raise ValueError("Имя игрока не может быть пустым")
         existing = next((profile for profile in self.profiles if profile.name.casefold() == cleaned.casefold()), None)
@@ -66,7 +69,7 @@ class PlayerRegistry:
         return profile
 
     def rename(self, player_id: str, name: str) -> PlayerProfileRecord:
-        cleaned = " ".join(name.strip().split())[:24]
+        cleaned = " ".join(name.strip().split())[:PLAYER_NAME_MAX_LENGTH]
         if not cleaned:
             raise ValueError("Имя игрока не может быть пустым")
         duplicate = next(

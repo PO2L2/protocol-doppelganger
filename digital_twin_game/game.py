@@ -34,15 +34,15 @@ from .editor import GAME_MODE_NAMES, ArenaEditor, ArenaLayout
 from .entities import Decoy, Enemy, Player, Projectile, SlashEffect, TrapHazard, TurretHazard
 from .features import build_feature_vector, classify_movement_action
 from .fx import AudioManager, CombatEffects
-from .hidpi import blit as logical_blit, draw as logical_draw, register_surface, unregister_surface
+from .hidpi import blit as logical_blit, draw as logical_draw, register_surface, scale_rect, unregister_surface
 from .lab import SessionSummary, load_sessions
 from .model_interface import ActionPredictionModel, PlaceholderPredictor
 from .neural_model import NeuralActionModel, TrainingMetrics
 from .objectives import TrainingObjective
-from .players import PlayerProfileRecord, PlayerRegistry
+from .players import PLAYER_NAME_MAX_LENGTH, PlayerProfileRecord, PlayerRegistry
 from .replay import ReplayRecorder
 from .tournament import TournamentFighter, TournamentMatch
-from .ui import draw_bar, draw_metric, draw_panel, draw_text
+from .ui import draw_bar, draw_metric, draw_panel, draw_text, get_font
 from .upgrades import UPGRADE_INFO, UpgradeType
 from .viewport import DisplayViewport
 from .weapons import WEAPON_SPECS, WeaponType
@@ -85,6 +85,10 @@ class DigitalTwinGame:
         desktop_sizes = pygame.display.get_desktop_sizes()
         self.desktop_size = desktop_sizes[0] if desktop_sizes else (WIDTH, HEIGHT)
         self.display_surface = pygame.display.set_mode(self.desktop_size, pygame.FULLSCREEN | pygame.DOUBLEBUF)
+        try:
+            pygame.scrap.init()
+        except pygame.error:
+            pass
         self.viewport = DisplayViewport((WIDTH, HEIGHT), self.display_surface.get_size())
         self._create_render_surfaces()
         self.clock = pygame.time.Clock()
@@ -282,6 +286,29 @@ class DigitalTwinGame:
     def _mouse_position(self, *, clamp: bool = False) -> tuple[int, int]:
         return self.viewport.display_to_logical(pygame.mouse.get_pos(), clamp=clamp)
 
+    @staticmethod
+    def _clipboard_text() -> str:
+        try:
+            if not pygame.scrap.get_init():
+                pygame.scrap.init()
+            raw = pygame.scrap.get(pygame.SCRAP_TEXT)
+        except pygame.error:
+            return ""
+        if raw is None:
+            return ""
+        if isinstance(raw, str):
+            decoded = raw
+        else:
+            decoded = ""
+            for encoding in ("utf-8", "utf-16-le", "mbcs", "cp1251"):
+                try:
+                    decoded = raw.decode(encoding)
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+        cleaned = " ".join(decoded.replace("\x00", "").splitlines())
+        return "".join(character for character in cleaned if character.isprintable())
+
     def _handle_events(self) -> None:
         self.explicit_action = None
         self.frame_outcome = ActionOutcome()
@@ -348,6 +375,10 @@ class DigitalTwinGame:
                         self.player_select_index = (self.player_select_index - 1) % visible_count
                     elif event.key == pygame.K_DOWN:
                         self.player_select_index = (self.player_select_index + 1) % visible_count
+                    elif event.key == pygame.K_v and getattr(event, "mod", 0) & pygame.KMOD_CTRL:
+                        available = PLAYER_NAME_MAX_LENGTH - len(self.player_name_input)
+                        if self.player_name_focused and available > 0:
+                            self.player_name_input += self._clipboard_text()[:available]
                     elif event.key == pygame.K_BACKSPACE:
                         self.player_name_input = self.player_name_input[:-1]
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
@@ -448,7 +479,7 @@ class DigitalTwinGame:
                     elif event.key == pygame.K_f:
                         self._perform_feint()
             elif event.type == pygame.TEXTINPUT and self.state == "player_select" and self.player_name_focused:
-                available = 24 - len(self.player_name_input)
+                available = PLAYER_NAME_MAX_LENGTH - len(self.player_name_input)
                 if available > 0:
                     self.player_name_input += "".join(character for character in event.text if character.isprintable())[:available]
             elif self.state == "menu" and event.type == pygame.MOUSEMOTION:
@@ -1586,7 +1617,7 @@ class DigitalTwinGame:
         elif self.state == "replay":
             self._draw_replay()
         elif self.state == "editor":
-            self.editor.draw(self.screen, draw_text, self.animated_background.draw)
+            self.editor.draw(self.screen, draw_text, self.animated_background.draw, self._mouse_position())
         elif self.state == "lab":
             self._draw_lab()
         elif self.state == "tournament":
@@ -1700,7 +1731,8 @@ class DigitalTwinGame:
             border = COLORS["player"] if selected else ((76, 103, 132) if hovered else (52, 72, 101))
             logical_draw.rect(self.screen, fill, rect, border_radius=11)
             logical_draw.rect(self.screen, border, rect, 2, border_radius=11)
-            draw_text(self.screen, profile.name, (rect.left + 24, rect.top + 15), 21, COLORS["white"], bold=True)
+            visible_name = profile.name if len(profile.name) <= 32 else profile.name[:31] + "…"
+            draw_text(self.screen, visible_name, (rect.left + 24, rect.top + 15), 21, COLORS["white"], bold=True)
             draw_text(
                 self.screen,
                 f"Сессий: {profile.session_count}   •   ID: {profile.player_id}",
@@ -1711,9 +1743,9 @@ class DigitalTwinGame:
             )
         input_rect = self._player_name_input_rect()
         if self.player_management_mode == "rename":
-            field_label = "ПЕРЕИМЕНОВАНИЕ — введите новое имя"
+            field_label = "ПЕРЕИМЕНОВАНИЕ — введите новое имя • Ctrl+V • до 60 символов"
         else:
-            field_label = "НОВЫЙ ПРОФИЛЬ — нажмите сюда и введите имя"
+            field_label = "НОВЫЙ ПРОФИЛЬ — введите имя • Ctrl+V • до 60 символов"
         draw_text(
             self.screen,
             field_label,
@@ -1727,16 +1759,24 @@ class DigitalTwinGame:
         input_border = COLORS["player"] if self.player_name_focused or input_hovered else (62, 82, 109)
         logical_draw.rect(self.screen, input_border, input_rect, 2, border_radius=9)
         input_text = self.player_name_input or "Введите имя нового игрока…"
+        text_x = input_rect.left + 17
+        if self.player_name_input:
+            physical_font_size = max(1, round(17 * self.render_scale))
+            text_width = get_font(physical_font_size).size(input_text)[0] / self.render_scale
+            text_x = min(text_x, input_rect.right - 17 - text_width)
+        previous_clip = self.screen.get_clip()
+        self.screen.set_clip(scale_rect(self.screen, input_rect.inflate(-14, -4)))
         text_rect = draw_text(
             self.screen,
             input_text,
-            (input_rect.left + 17, input_rect.top + 10),
+            (text_x, input_rect.top + 10),
             17,
             COLORS["white"] if self.player_name_input else COLORS["muted"],
         )
         if self.player_name_focused and int(self.ui_time * 2) % 2 == 0:
             cursor_x = text_rect.right + 2 if self.player_name_input else input_rect.left + 17
             logical_draw.line(self.screen, COLORS["player"], (cursor_x, input_rect.top + 9), (cursor_x, input_rect.bottom - 9), 2)
+        self.screen.set_clip(previous_clip)
         continue_rect = self._player_continue_rect()
         logical_draw.rect(self.screen, (25, 65, 68), continue_rect, border_radius=11)
         logical_draw.rect(self.screen, COLORS["player"], continue_rect, 2, border_radius=11)
