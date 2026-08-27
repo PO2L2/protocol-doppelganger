@@ -4,6 +4,8 @@ from enum import Enum
 
 import pygame
 
+from .hidpi import draw as logical_draw
+
 from .config import COLORS
 
 
@@ -76,16 +78,16 @@ class TrainingObjective:
             color = COLORS["health"] if self.complete else COLORS["accent"]
             fill = tuple(max(8, channel // 7) for channel in color)
             outline = tuple(max(20, int(channel * 0.72)) for channel in color)
-            pygame.draw.circle(surface, fill, self.zone_position, self.zone_radius)
-            pygame.draw.circle(surface, outline, self.zone_position, self.zone_radius, 3)
+            logical_draw.circle(surface, fill, self.zone_position, self.zone_radius)
+            logical_draw.circle(surface, outline, self.zone_position, self.zone_radius, 3)
         elif self.kind == ObjectiveType.COLLECT:
             for position, collected in self.cores:
                 if collected:
                     continue
-                pygame.draw.circle(surface, COLORS["warning"], position, 11)
-                pygame.draw.circle(surface, COLORS["white"], position, 16, 2)
+                logical_draw.circle(surface, COLORS["warning"], position, 11)
+                logical_draw.circle(surface, COLORS["white"], position, 16, 2)
         else:
             ratio = self.core_health / 100
-            pygame.draw.circle(surface, (25, 57, 79), self.zone_position, 35)
-            pygame.draw.circle(surface, COLORS["accent"] if ratio > 0.3 else COLORS["enemy"], self.zone_position, 25)
-            pygame.draw.circle(surface, COLORS["white"], self.zone_position, 38, 2)
+            logical_draw.circle(surface, (25, 57, 79), self.zone_position, 35)
+            logical_draw.circle(surface, COLORS["accent"] if ratio > 0.3 else COLORS["enemy"], self.zone_position, 25)
+            logical_draw.circle(surface, COLORS["white"], self.zone_position, 38, 2)

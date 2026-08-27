@@ -21,6 +21,7 @@ from digital_twin_game.entities import Enemy, Player
 from digital_twin_game.editor import ArenaEditor, ArenaLayout
 from digital_twin_game.features import build_feature_vector
 from digital_twin_game.game import DigitalTwinGame
+from digital_twin_game.hidpi import draw as logical_draw, register_surface, unregister_surface
 from digital_twin_game.lab import load_sessions
 from digital_twin_game.model_interface import ACTION_COUNT, FEATURE_NAMES, PlaceholderPredictor
 from digital_twin_game.neural_model import NeuralActionModel
@@ -73,6 +74,18 @@ class ContractTests(unittest.TestCase):
         self.assertGreater(viewport.rect.top, 0)
         self.assertEqual(viewport.display_to_logical((10, 10)), (-10_000, -10_000))
         self.assertEqual(viewport.display_to_logical((10, 10), clamp=True)[1], 0)
+
+    def test_hidpi_drawing_uses_native_surface_pixels(self) -> None:
+        surface = register_surface(pygame.Surface((256, 144)), 2.0)
+        physical_rect = logical_draw.rect(surface, (255, 255, 255), (10, 12, 30, 16))
+        self.assertEqual(physical_rect, pygame.Rect(20, 24, 60, 32))
+        self.assertEqual(surface.get_at((25, 30))[:3], (255, 255, 255))
+        unregister_surface(surface)
+
+    def test_game_renders_directly_at_viewport_resolution(self) -> None:
+        game = DigitalTwinGame()
+        self.assertEqual(game.screen.get_size(), game.viewport.rect.size)
+        self.assertAlmostEqual(game.render_scale, game.viewport.rect.width / 1280)
 
     def test_selection_continue_buttons_are_clickable(self) -> None:
         game = DigitalTwinGame()

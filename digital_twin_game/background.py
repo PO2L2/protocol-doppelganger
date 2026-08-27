@@ -6,6 +6,8 @@ import random
 
 import pygame
 
+from .hidpi import draw as logical_draw
+
 from .config import COLORS, HEIGHT, WIDTH
 
 
@@ -79,12 +81,12 @@ class AnimatedConstellationBackground:
         for index in range(5):
             y = int((index * 190 + self.time * (7 + index)) % (HEIGHT + 190) - 95)
             shade = 9 + index * 2
-            pygame.draw.rect(surface, (7, shade, shade + 12), (0, y, WIDTH, 74))
+            logical_draw.rect(surface, (7, shade, shade + 12), (0, y, WIDTH, 74))
 
         for position, radius, phase in self.stars:
             brightness = 0.72 + 0.18 * math.sin(phase)
             value = int((35 + 55 * brightness) * intensity)
-            pygame.draw.circle(surface, (max(10, value // 3), value, value + 18), position, max(1, int(radius)))
+            logical_draw.circle(surface, (max(10, value // 3), value, value + 18), position, max(1, int(radius)))
 
         for constellation in self.constellations:
             brightness = (0.76 + 0.14 * math.sin(constellation.phase)) * intensity
@@ -106,7 +108,7 @@ class AnimatedConstellationBackground:
                 int(105 + 80 * brightness),
             )
             for start, end in constellation.edges:
-                pygame.draw.aaline(surface, line_color, points[start], points[end])
+                logical_draw.aaline(surface, line_color, points[start], points[end])
             for index, point in enumerate(points):
                 radius = 2 + int((math.sin(self.time * 2.1 + constellation.phase + index) + 1) * 0.7)
-                pygame.draw.circle(surface, node_color, point, radius)
+                logical_draw.circle(surface, node_color, point, radius)

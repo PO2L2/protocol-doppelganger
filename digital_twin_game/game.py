@@ -34,6 +34,7 @@ from .editor import GAME_MODE_NAMES, ArenaEditor, ArenaLayout
 from .entities import Decoy, Enemy, Player, Projectile, SlashEffect, TrapHazard, TurretHazard
 from .features import build_feature_vector, classify_movement_action
 from .fx import AudioManager, CombatEffects
+from .hidpi import blit as logical_blit, draw as logical_draw, register_surface, unregister_surface
 from .lab import SessionSummary, load_sessions
 from .model_interface import ActionPredictionModel, PlaceholderPredictor
 from .neural_model import NeuralActionModel, TrainingMetrics
@@ -84,11 +85,8 @@ class DigitalTwinGame:
         desktop_sizes = pygame.display.get_desktop_sizes()
         self.desktop_size = desktop_sizes[0] if desktop_sizes else (WIDTH, HEIGHT)
         self.display_surface = pygame.display.set_mode(self.desktop_size, pygame.FULLSCREEN | pygame.DOUBLEBUF)
-        self.screen = pygame.Surface((WIDTH, HEIGHT)).convert()
         self.viewport = DisplayViewport((WIDTH, HEIGHT), self.display_surface.get_size())
-        self.scaled_surface = pygame.Surface(self.viewport.rect.size).convert()
-        self.world_surface = pygame.Surface((WIDTH, HEIGHT)).convert()
-        self.alpha_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA).convert_alpha()
+        self._create_render_surfaces()
         self.clock = pygame.time.Clock()
         self.animated_background = AnimatedConstellationBackground()
         self.frame_dt = 1 / FPS
@@ -239,7 +237,22 @@ class DigitalTwinGame:
 
     def _refresh_viewport(self) -> None:
         self.viewport.update(self.display_surface.get_size())
-        self.scaled_surface = pygame.Surface(self.viewport.rect.size).convert()
+        self._create_render_surfaces()
+
+    def _create_render_surfaces(self) -> None:
+        for name in ("screen", "world_surface", "alpha_surface"):
+            previous = getattr(self, name, None)
+            if previous is not None:
+                unregister_surface(previous)
+        render_size = self.viewport.rect.size
+        render_scale = render_size[0] / WIDTH
+        self.render_scale = render_scale
+        self.screen = register_surface(pygame.Surface(render_size).convert(), render_scale)
+        self.world_surface = register_surface(pygame.Surface(render_size).convert(), render_scale)
+        self.alpha_surface = register_surface(
+            pygame.Surface(render_size, pygame.SRCALPHA).convert_alpha(),
+            render_scale,
+        )
 
     def _toggle_fullscreen(self) -> None:
         if self.fullscreen:
@@ -258,12 +271,7 @@ class DigitalTwinGame:
 
     def _present_frame(self) -> None:
         self.display_surface.fill((3, 5, 10))
-        if self.viewport.rect.size == (WIDTH, HEIGHT):
-            frame = self.screen
-        else:
-            pygame.transform.scale(self.screen, self.viewport.rect.size, self.scaled_surface)
-            frame = self.scaled_surface
-        self.display_surface.blit(frame, self.viewport.rect)
+        self.display_surface.blit(self.screen, self.viewport.rect)
 
     def _mouse_position(self, *, clamp: bool = False) -> tuple[int, int]:
         return self.viewport.display_to_logical(pygame.mouse.get_pos(), clamp=clamp)
@@ -1589,8 +1597,8 @@ class DigitalTwinGame:
             border = (51, 67, 91)
             text_color = COLORS["muted"]
         animated_rect = rect.inflate(6, 4) if hovered else rect
-        pygame.draw.rect(self.screen, fill, animated_rect, border_radius=11)
-        pygame.draw.rect(self.screen, border, animated_rect, 2, border_radius=11)
+        logical_draw.rect(self.screen, fill, animated_rect, border_radius=11)
+        logical_draw.rect(self.screen, border, animated_rect, 2, border_radius=11)
         draw_text(self.screen, label, animated_rect.center, 18, text_color, bold=True, anchor="center")
 
     def _draw_menu(self) -> None:
@@ -1600,7 +1608,7 @@ class DigitalTwinGame:
         for index in range(3):
             radius = int(92 + index * 31 + pulse * 9)
             ring_color = (12 + index * 5, 45 + index * 7, 57 + index * 9)
-            pygame.draw.circle(self.screen, ring_color, (WIDTH // 2, 142 + int(float_y)), radius, 1)
+            logical_draw.circle(self.screen, ring_color, (WIDTH // 2, 142 + int(float_y)), radius, 1)
         draw_text(self.screen, "ПРОТОКОЛ:", (WIDTH / 2, 78 + float_y), 25, COLORS["muted"], bold=True, anchor="midtop")
         glow = (20, int(82 + pulse * 35), int(91 + pulse * 40))
         draw_text(self.screen, "ДВОЙНИК", (WIDTH / 2 + 2, 108 + float_y), 68, glow, bold=True, anchor="midtop")
@@ -1608,8 +1616,8 @@ class DigitalTwinGame:
         draw_text(self.screen, "Игра изучает твои привычки. Финальный противник — ты сам.", (WIDTH / 2, 198), 21, anchor="midtop")
         profile_rect = self._profile_badge_rect()
         profile_hovered = profile_rect.collidepoint(self._mouse_position())
-        pygame.draw.rect(self.screen, (17, 48, 59) if profile_hovered else (10, 25, 38), profile_rect, border_radius=9)
-        pygame.draw.rect(self.screen, COLORS["player"] if profile_hovered else (40, 91, 103), profile_rect, 1, border_radius=9)
+        logical_draw.rect(self.screen, (17, 48, 59) if profile_hovered else (10, 25, 38), profile_rect, border_radius=9)
+        logical_draw.rect(self.screen, COLORS["player"] if profile_hovered else (40, 91, 103), profile_rect, 1, border_radius=9)
         visible_profile_name = self.current_player.name
         if len(visible_profile_name) > 18:
             visible_profile_name = visible_profile_name[:17] + "…"
@@ -1637,11 +1645,11 @@ class DigitalTwinGame:
                 int(47 + focus * 22),
             )
             border = tuple(int((58, 78, 106)[channel] + (COLORS["player"][channel] - (58, 78, 106)[channel]) * focus) for channel in range(3))
-            pygame.draw.rect(self.screen, fill, animated_rect, border_radius=12)
-            pygame.draw.rect(self.screen, border, animated_rect, 2, border_radius=12)
+            logical_draw.rect(self.screen, fill, animated_rect, border_radius=12)
+            logical_draw.rect(self.screen, border, animated_rect, 2, border_radius=12)
             if focus > 0.2:
                 light_width = int((animated_rect.width - 45) * focus)
-                pygame.draw.line(self.screen, border, (animated_rect.centerx - light_width // 2, animated_rect.bottom - 5), (animated_rect.centerx + light_width // 2, animated_rect.bottom - 5), 2)
+                logical_draw.line(self.screen, border, (animated_rect.centerx - light_width // 2, animated_rect.bottom - 5), (animated_rect.centerx + light_width // 2, animated_rect.bottom - 5), 2)
             draw_text(self.screen, label, animated_rect.center, 21, COLORS["white"] if focus > 0.45 else COLORS["text"], bold=True, anchor="center")
         draw_text(self.screen, "Мышь или ↑ ↓ и ENTER", (WIDTH / 2, 593), 16, COLORS["muted"], anchor="midtop")
         demo_color = COLORS["health"] if self.demo_mode else COLORS["muted"]
@@ -1676,16 +1684,16 @@ class DigitalTwinGame:
             else:
                 fill = (22, 58, 65) if hovered else (18, 34, 50)
                 border = COLORS["player"] if hovered else (61, 82, 108)
-            pygame.draw.rect(self.screen, fill, rect, border_radius=8)
-            pygame.draw.rect(self.screen, border, rect, 1, border_radius=8)
+            logical_draw.rect(self.screen, fill, rect, border_radius=8)
+            logical_draw.rect(self.screen, border, rect, 1, border_radius=8)
             draw_text(self.screen, label, rect.center, 12, COLORS["white"], bold=True, anchor="center")
         for index, (profile, rect) in enumerate(zip(profiles, self._player_card_rects())):
             selected = index == self.player_select_index and not self.player_name_input
             hovered = rect.collidepoint(mouse)
             fill = (22, 61, 67) if selected else ((20, 37, 54) if hovered else COLORS["panel"])
             border = COLORS["player"] if selected else ((76, 103, 132) if hovered else (52, 72, 101))
-            pygame.draw.rect(self.screen, fill, rect, border_radius=11)
-            pygame.draw.rect(self.screen, border, rect, 2, border_radius=11)
+            logical_draw.rect(self.screen, fill, rect, border_radius=11)
+            logical_draw.rect(self.screen, border, rect, 2, border_radius=11)
             draw_text(self.screen, profile.name, (rect.left + 24, rect.top + 15), 21, COLORS["white"], bold=True)
             draw_text(
                 self.screen,
@@ -1708,10 +1716,10 @@ class DigitalTwinGame:
             COLORS["player"] if self.player_name_focused else COLORS["muted"],
             bold=self.player_name_focused,
         )
-        pygame.draw.rect(self.screen, (10, 18, 31), input_rect, border_radius=9)
+        logical_draw.rect(self.screen, (10, 18, 31), input_rect, border_radius=9)
         input_hovered = input_rect.collidepoint(mouse)
         input_border = COLORS["player"] if self.player_name_focused or input_hovered else (62, 82, 109)
-        pygame.draw.rect(self.screen, input_border, input_rect, 2, border_radius=9)
+        logical_draw.rect(self.screen, input_border, input_rect, 2, border_radius=9)
         input_text = self.player_name_input or "Введите имя нового игрока…"
         text_rect = draw_text(
             self.screen,
@@ -1722,10 +1730,10 @@ class DigitalTwinGame:
         )
         if self.player_name_focused and int(self.ui_time * 2) % 2 == 0:
             cursor_x = text_rect.right + 2 if self.player_name_input else input_rect.left + 17
-            pygame.draw.line(self.screen, COLORS["player"], (cursor_x, input_rect.top + 9), (cursor_x, input_rect.bottom - 9), 2)
+            logical_draw.line(self.screen, COLORS["player"], (cursor_x, input_rect.top + 9), (cursor_x, input_rect.bottom - 9), 2)
         continue_rect = self._player_continue_rect()
-        pygame.draw.rect(self.screen, (25, 65, 68), continue_rect, border_radius=11)
-        pygame.draw.rect(self.screen, COLORS["player"], continue_rect, 2, border_radius=11)
+        logical_draw.rect(self.screen, (25, 65, 68), continue_rect, border_radius=11)
+        logical_draw.rect(self.screen, COLORS["player"], continue_rect, 2, border_radius=11)
         continue_label = "СОХРАНИТЬ ИМЯ" if self.player_management_mode == "rename" else "ПРОДОЛЖИТЬ"
         draw_text(self.screen, continue_label, continue_rect.center, 19, COLORS["white"], bold=True, anchor="center")
         if self.player_profile_notice:
@@ -1777,20 +1785,20 @@ class DigitalTwinGame:
             card_delay = min(1.0, eased * 1.2 - index * 0.04)
             card_shift = int((1.0 - max(0.0, card_delay)) * 40)
             rect = pygame.Rect(panel.left + 55 + card_shift, start_y + index * 78, panel.width - 110, card_height)
-            pygame.draw.rect(self.screen, (19, 33, 52), rect, border_radius=10)
-            pygame.draw.rect(self.screen, (53, 76, 105), rect, 1, border_radius=10)
+            logical_draw.rect(self.screen, (19, 33, 52), rect, border_radius=10)
+            logical_draw.rect(self.screen, (53, 76, 105), rect, 1, border_radius=10)
             key_rect = pygame.Rect(rect.left + 14, rect.top + 11, 150, 42)
-            pygame.draw.rect(self.screen, (24, 62, 68), key_rect, border_radius=8)
+            logical_draw.rect(self.screen, (24, 62, 68), key_rect, border_radius=8)
             draw_text(self.screen, key, key_rect.center, 16, COLORS["player"], bold=True, anchor="center")
             draw_text(self.screen, explanation, (rect.left + 185, rect.centery), 17, COLORS["text"], anchor="midleft")
         for index in range(len(pages)):
             color = COLORS["player"] if index == self.tutorial_page else (53, 72, 98)
-            pygame.draw.circle(self.screen, color, (WIDTH // 2 - 48 + index * 24, 608), 6)
+            logical_draw.circle(self.screen, color, (WIDTH // 2 - 48 + index * 24, 608), 6)
         back, forward = self._tutorial_navigation_rects()
         for rect, label in ((back, "← НАЗАД"), (forward, "НАЧАТЬ ПРАКТИКУ" if self.tutorial_page == 4 else "ДАЛЕЕ →")):
             hovered = rect.collidepoint(self._mouse_position())
-            pygame.draw.rect(self.screen, (24, 55, 67) if hovered else COLORS["panel"], rect, border_radius=9)
-            pygame.draw.rect(self.screen, COLORS["player"] if hovered else (61, 79, 108), rect, 2, border_radius=9)
+            logical_draw.rect(self.screen, (24, 55, 67) if hovered else COLORS["panel"], rect, border_radius=9)
+            logical_draw.rect(self.screen, COLORS["player"] if hovered else (61, 79, 108), rect, 2, border_radius=9)
             draw_text(self.screen, label, rect.center, 17, COLORS["white"], bold=True, anchor="center")
         draw_text(self.screen, f"{self.tutorial_page + 1}/5", (WIDTH / 2, 653), 16, COLORS["muted"], anchor="midtop")
 
@@ -1799,8 +1807,8 @@ class DigitalTwinGame:
         self.arena.draw(world)
         target = self.enemies[0]
         if self.tutorial_step == 3:
-            pygame.draw.line(world, COLORS["enemy"], target.position, self.player.position, 2)
-            pygame.draw.circle(world, COLORS["warning"], self.player.position, self.player.radius + 18, 2)
+            logical_draw.line(world, COLORS["enemy"], target.position, self.player.position, 2)
+            logical_draw.circle(world, COLORS["warning"], self.player.position, self.player.radius + 18, 2)
         for projectile in self.projectiles:
             projectile.draw(world)
         for effect in self.effects:
@@ -1808,8 +1816,8 @@ class DigitalTwinGame:
         target.draw(world, self.arena.bounds)
         self.player.draw(world)
         self.combat_fx.draw(world, pygame.Vector2())
-        self.screen.blit(world, (0, 0))
-        pygame.draw.rect(self.screen, COLORS["panel"], (0, 0, WIDTH, 82))
+        logical_blit(self.screen, world, (0, 0))
+        logical_draw.rect(self.screen, COLORS["panel"], (0, 0, WIDTH, 82))
         draw_text(self.screen, "ПРАКТИЧЕСКОЕ ОБУЧЕНИЕ", (28, 18), 24, COLORS["player"], bold=True)
         draw_text(self.screen, "ESC — выйти", (WIDTH - 28, 25), 15, COLORS["muted"], anchor="topright")
         if self.tutorial_step >= len(INTERACTIVE_TUTORIAL_STEPS):
@@ -1825,8 +1833,8 @@ class DigitalTwinGame:
         draw_text(self.screen, f"{self.tutorial_step + 1}/{len(INTERACTIVE_TUTORIAL_STEPS)}  {title}", (panel.left + 22, panel.top + 16), 20, COLORS["warning"], bold=True)
         draw_text(self.screen, description, (panel.left + 22, panel.top + 49), 15, COLORS["text"])
         key_rect = pygame.Rect(panel.right - 125, panel.top + 18, 98, 55)
-        pygame.draw.rect(self.screen, (25, 60, 67), key_rect, border_radius=9)
-        pygame.draw.rect(self.screen, COLORS["player"], key_rect, 2, border_radius=9)
+        logical_draw.rect(self.screen, (25, 60, 67), key_rect, border_radius=9)
+        logical_draw.rect(self.screen, COLORS["player"], key_rect, 2, border_radius=9)
         draw_text(self.screen, key, key_rect.center, 17, COLORS["player"], bold=True, anchor="center")
         if self.tutorial_step == 0:
             progress = self.tutorial_progress / 1.5
@@ -1838,8 +1846,8 @@ class DigitalTwinGame:
             progress = 0.0
         if progress > 0:
             bar = pygame.Rect(panel.left + 22, panel.bottom - 9, panel.width - 44, 4)
-            pygame.draw.rect(self.screen, (35, 54, 75), bar)
-            pygame.draw.rect(self.screen, COLORS["player"], (bar.x, bar.y, int(bar.width * min(1.0, progress)), bar.height))
+            logical_draw.rect(self.screen, (35, 54, 75), bar)
+            logical_draw.rect(self.screen, COLORS["player"], (bar.x, bar.y, int(bar.width * min(1.0, progress)), bar.height))
 
     def _draw_loadout(self) -> None:
         self.animated_background.draw(self.screen, 0.68)
@@ -1849,7 +1857,7 @@ class DigitalTwinGame:
         ring_pulse = 0.65
         for index in range(3):
             radius = 55 + index * 22 + int(ring_pulse * 5)
-            pygame.draw.circle(self.screen, (13 + index * 4, 42 + index * 7, 55 + index * 8), (WIDTH // 2, 62 + title_offset), radius, 1)
+            logical_draw.circle(self.screen, (13 + index * 4, 42 + index * 7, 55 + index * 8), (WIDTH // 2, 62 + title_offset), radius, 1)
         draw_text(self.screen, "ВЫБЕРИТЕ ТРИ СПОСОБНОСТИ", (WIDTH / 2, 42 + title_offset + title_float), 37, COLORS["player"], bold=True, anchor="midtop")
         draw_text(self.screen, "Нажимайте 1–7 или выбирайте мышью. Двойник получит тот же набор.", (WIDTH / 2, 96 + title_offset), 18, COLORS["muted"], anchor="midtop")
         abilities = list(AbilityType)
@@ -1868,15 +1876,15 @@ class DigitalTwinGame:
             fill = (int(17 + focus * 8), int(25 + focus * 31), int(43 + focus * 23))
             neutral_border = (61, 79, 108)
             border = tuple(int(neutral_border[channel] + (COLORS["player"][channel] - neutral_border[channel]) * focus) for channel in range(3))
-            pygame.draw.rect(self.screen, fill, rect, border_radius=12)
-            pygame.draw.rect(self.screen, border, rect, 2, border_radius=12)
+            logical_draw.rect(self.screen, fill, rect, border_radius=12)
+            logical_draw.rect(self.screen, border, rect, 2, border_radius=12)
             if selected:
                 track_start = (rect.left + 25, rect.bottom - 5)
                 track_end = (rect.right - 25, rect.bottom - 5)
-                pygame.draw.line(self.screen, (34, 79, 82), track_start, track_end, 2)
+                logical_draw.line(self.screen, (34, 79, 82), track_start, track_end, 2)
                 filled_width = int((rect.width - 50) * self.loadout_bar_progress[index])
                 if filled_width > 0:
-                    pygame.draw.line(self.screen, border, track_start, (track_start[0] + filled_width, track_start[1]), 2)
+                    logical_draw.line(self.screen, border, track_start, (track_start[0] + filled_width, track_start[1]), 2)
             name, description, cooldown = ABILITY_INFO[ability]
             draw_text(self.screen, str(index + 1), (rect.left + 25, rect.centery), 25, COLORS["warning"], bold=True, anchor="center")
             draw_text(self.screen, name, (rect.left + 58, rect.top + 15), 20, COLORS["white"], bold=True)
@@ -1905,8 +1913,8 @@ class DigitalTwinGame:
             hovered = base_rect.collidepoint(mouse_position)
             fill = (23, 55, 64) if selected else ((20, 35, 53) if hovered else COLORS["panel"])
             border = COLORS["player"] if selected else (75, 101, 135) if hovered else (56, 75, 103)
-            pygame.draw.rect(self.screen, fill, rect, border_radius=13)
-            pygame.draw.rect(self.screen, border, rect, 2, border_radius=13)
+            logical_draw.rect(self.screen, fill, rect, border_radius=13)
+            logical_draw.rect(self.screen, border, rect, 2, border_radius=13)
             spec = WEAPON_SPECS[weapon]
             draw_text(self.screen, str(index + 1), (rect.left + 28, rect.centery), 28, COLORS["warning"], bold=True, anchor="center")
             draw_text(self.screen, spec.name, (rect.left + 60, rect.top + 20), 22, COLORS["white"], bold=True)
@@ -1926,13 +1934,13 @@ class DigitalTwinGame:
             hovered = rect.collidepoint(mouse_position)
             fill = (24, 52, 61) if hovered else COLORS["panel"]
             border = COLORS["player"] if hovered else (60, 81, 111)
-            pygame.draw.rect(self.screen, fill, rect, border_radius=14)
-            pygame.draw.rect(self.screen, border, rect, 2, border_radius=14)
+            logical_draw.rect(self.screen, fill, rect, border_radius=14)
+            logical_draw.rect(self.screen, border, rect, 2, border_radius=14)
             name, description = UPGRADE_INFO[upgrade]
             draw_text(self.screen, str(index + 1), (rect.centerx, rect.top + 24), 27, COLORS["warning"], bold=True, anchor="midtop")
             draw_text(self.screen, name, (rect.centerx, rect.top + 77), 21, COLORS["white"], bold=True, anchor="midtop")
             draw_text(self.screen, description, (rect.centerx, rect.top + 127), 15, COLORS["muted"], anchor="midtop")
-            pygame.draw.line(self.screen, border, (rect.left + 35, rect.bottom - 35), (rect.right - 35, rect.bottom - 35), 2)
+            logical_draw.line(self.screen, border, (rect.left + 35, rect.bottom - 35), (rect.right - 35, rect.bottom - 35), 2)
         chosen_names = [UPGRADE_INFO[UpgradeType(value)][0] for value in self.session_upgrades]
         history = "Уже установлено: " + (" • ".join(chosen_names) if chosen_names else "нет")
         draw_text(self.screen, history, (WIDTH / 2, 545), 16, COLORS["health"], anchor="midtop")
@@ -1944,8 +1952,8 @@ class DigitalTwinGame:
         for index, point in enumerate(points):
             for other in points[index + 1 :]:
                 if pygame.Vector2(point).distance_to(other) < 155:
-                    pygame.draw.line(self.screen, (19, 48, 65), point, other, 1)
-            pygame.draw.circle(self.screen, (31, 91, 102), point, 3)
+                    logical_draw.line(self.screen, (19, 48, 65), point, other, 1)
+            logical_draw.circle(self.screen, (31, 91, 102), point, 3)
 
     def _draw_combat(self) -> None:
         world = self.world_surface
@@ -1954,8 +1962,8 @@ class DigitalTwinGame:
             objective = self.editor.layout.objective_position
             inside = self.player.position.distance_to(pygame.Vector2(objective)) <= 90
             zone_color = COLORS["health"] if inside else COLORS["warning"]
-            pygame.draw.circle(world, tuple(max(7, channel // 8) for channel in zone_color), objective, 90)
-            pygame.draw.circle(world, zone_color, objective, 90, 3)
+            logical_draw.circle(world, tuple(max(7, channel // 8) for channel in zone_color), objective, 90)
+            logical_draw.circle(world, zone_color, objective, 90, 3)
         if self.objective:
             self.objective.draw(world)
         if self.state == "training" and self.previous_replay:
@@ -1963,9 +1971,9 @@ class DigitalTwinGame:
             if ghost is not None:
                 layer = self.alpha_surface
                 layer.fill((0, 0, 0, 0))
-                pygame.draw.circle(layer, (*COLORS["twin"], 70), ghost, 18)
-                pygame.draw.circle(layer, (*COLORS["white"], 90), ghost, 26, 2)
-                world.blit(layer, (0, 0))
+                logical_draw.circle(layer, (*COLORS["twin"], 70), ghost, 18)
+                logical_draw.circle(layer, (*COLORS["white"], 90), ghost, 26, 2)
+                logical_blit(world, layer, (0, 0))
         for hazard in self.hazards:
             hazard.draw(world)
         for decoy in self.decoys:
@@ -1981,7 +1989,7 @@ class DigitalTwinGame:
         self.combat_fx.draw(world, pygame.Vector2())
         offset = self.combat_fx.offset()
         self.screen.fill(COLORS["background"])
-        self.screen.blit(world, offset)
+        logical_blit(self.screen, world, offset)
         self._draw_hud()
         if self.round_clear_timer > 0:
             message = "ВОЛНА НЕЙТРАЛИЗОВАНА" if self.state == "training" else "СИГНАЛ НЕЙТРАЛИЗОВАН"
@@ -1996,7 +2004,7 @@ class DigitalTwinGame:
             self._draw_twin_intro()
 
     def _draw_hud(self) -> None:
-        pygame.draw.rect(self.screen, COLORS["panel"], (0, 0, WIDTH, 78))
+        logical_draw.rect(self.screen, COLORS["panel"], (0, 0, WIDTH, 78))
         draw_text(self.screen, "ДВОЙНИК", (32, 18), 25, COLORS["player"], bold=True)
         fps = self.clock.get_fps()
         fps_color = COLORS["health"] if fps >= 55 else (COLORS["warning"] if fps >= 35 else COLORS["enemy"])
@@ -2078,18 +2086,18 @@ class DigitalTwinGame:
         for index in range(4):
             radius = int(28 + ((progress * 220 + index * 52) % 225))
             alpha = max(20, 170 - radius // 2)
-            pygame.draw.circle(overlay, (*COLORS["twin"], alpha), twin.position, radius, 2)
-        self.screen.blit(overlay, (0, 0))
+            logical_draw.circle(overlay, (*COLORS["twin"], alpha), twin.position, radius, 2)
+        logical_blit(self.screen, overlay, (0, 0))
         jitter = int(math.sin(progress * 80) * 8)
         for index in range(9):
             y = int(twin.position.y - 120 + index * 28 + math.sin(progress * 35 + index) * 8)
             width = 110 + (index % 3) * 36
-            pygame.draw.line(self.screen, COLORS["twin"], (twin.position.x - width + jitter, y), (twin.position.x + width, y), 2)
+            logical_draw.line(self.screen, COLORS["twin"], (twin.position.x - width + jitter, y), (twin.position.x + width, y), 2)
         draw_text(self.screen, "СОЗДАНИЕ ЦИФРОВОГО ПРОФИЛЯ", (WIDTH / 2, 175), 23, COLORS["muted"], bold=True, anchor="midtop")
         draw_text(self.screen, f"{int(progress * 100):02d}%", (WIDTH / 2, 212), 58, COLORS["twin"], bold=True, anchor="midtop")
 
     def _draw_heatmap(self, rect: pygame.Rect) -> None:
-        pygame.draw.rect(self.screen, (10, 17, 30), rect, border_radius=8)
+        logical_draw.rect(self.screen, (10, 17, 30), rect, border_radius=8)
         maximum = max(1, self.heatmap.maximum)
         cell_width = rect.width / self.heatmap.columns
         cell_height = rect.height / self.heatmap.rows
@@ -2109,8 +2117,8 @@ class DigitalTwinGame:
                     math.ceil(cell_width) + 1,
                     math.ceil(cell_height) + 1,
                 )
-                pygame.draw.rect(self.screen, color, cell)
-        pygame.draw.rect(self.screen, (72, 91, 118), rect, 1, border_radius=8)
+                logical_draw.rect(self.screen, color, cell)
+        logical_draw.rect(self.screen, (72, 91, 118), rect, 1, border_radius=8)
 
     def _draw_confusion_matrix(self, rect: pygame.Rect) -> None:
         matrix = getattr(self.model_metrics, "confusion_matrix", ())
@@ -2143,8 +2151,8 @@ class DigitalTwinGame:
                 base = COLORS["health"] if actual == predicted else COLORS["enemy"]
                 color = tuple(int(17 + (component - 17) * intensity) for component in base)
                 cell = pygame.Rect(grid.left + predicted * cell_size, grid.top + actual * cell_size, cell_size, cell_size)
-                pygame.draw.rect(self.screen, color, cell)
-                pygame.draw.rect(self.screen, (50, 64, 84), cell, 1)
+                logical_draw.rect(self.screen, color, cell)
+                logical_draw.rect(self.screen, (50, 64, 84), cell, 1)
                 if value:
                     draw_text(self.screen, str(value), cell.center, 10, COLORS["white"], bold=value == maximum, anchor="center")
         draw_text(self.screen, "Нажмите на красную ячейку, чтобы открыть момент повтора", (rect.centerx, rect.bottom - 29), 10, COLORS["warning"], anchor="center")
@@ -2249,7 +2257,7 @@ class DigitalTwinGame:
         for index in range(5):
             radius = 72 + index * 23
             start = self.ui_time * (0.7 + index * 0.11) + index
-            pygame.draw.arc(
+            logical_draw.arc(
                 self.screen,
                 COLORS["player"] if index % 2 == 0 else COLORS["twin"],
                 pygame.Rect(center.x - radius, center.y - radius, radius * 2, radius * 2),
@@ -2261,8 +2269,8 @@ class DigitalTwinGame:
         if epoch:
             draw_text(self.screen, f"Эпоха {epoch}/{total}", (center.x, center.y + 38), 17, COLORS["warning"], anchor="center")
         bar = pygame.Rect(280, 500, 720, 15)
-        pygame.draw.rect(self.screen, (25, 40, 61), bar, border_radius=8)
-        pygame.draw.rect(self.screen, COLORS["player"], (bar.x, bar.y, int(bar.width * max(0.0, min(1.0, ratio))), bar.height), border_radius=8)
+        logical_draw.rect(self.screen, (25, 40, 61), bar, border_radius=8)
+        logical_draw.rect(self.screen, COLORS["player"], (bar.x, bar.y, int(bar.width * max(0.0, min(1.0, ratio))), bar.height), border_radius=8)
         draw_text(
             self.screen,
             f"Качество данных: {self.data_quality.score * 100:.0f}%   •   покрыто действий: {self.data_quality.covered_classes}/10",
@@ -2282,8 +2290,8 @@ class DigitalTwinGame:
         title: str,
         maximum: float | None = None,
     ) -> None:
-        pygame.draw.rect(self.screen, (10, 17, 30), rect, border_radius=9)
-        pygame.draw.rect(self.screen, (55, 75, 103), rect, 1, border_radius=9)
+        logical_draw.rect(self.screen, (10, 17, 30), rect, border_radius=9)
+        logical_draw.rect(self.screen, (55, 75, 103), rect, 1, border_radius=9)
         draw_text(self.screen, title, (rect.left + 14, rect.top + 10), 15, COLORS["muted"], bold=True)
         if not values:
             draw_text(self.screen, "Нет истории", rect.center, 15, COLORS["muted"], anchor="center")
@@ -2299,9 +2307,9 @@ class DigitalTwinGame:
             for index, value in enumerate(values)
         ]
         if len(points) > 1:
-            pygame.draw.lines(self.screen, color, False, points, 3)
+            logical_draw.lines(self.screen, color, False, points, 3)
         for point in points:
-            pygame.draw.circle(self.screen, color, point, 3)
+            logical_draw.circle(self.screen, color, point, 3)
         draw_text(self.screen, f"{values[-1]:.3f}", (rect.right - 12, rect.top + 9), 14, color, bold=True, anchor="topright")
 
     def _draw_model_analysis(self) -> None:
@@ -2402,13 +2410,13 @@ class DigitalTwinGame:
             if len(points) > 1:
                 layer = self.alpha_surface
                 layer.fill((0, 0, 0, 0))
-                pygame.draw.lines(layer, (*COLORS["twin"], 75), False, points[-180:], 3)
-                self.screen.blit(layer, (0, 0))
+                logical_draw.lines(layer, (*COLORS["twin"], 75), False, points[-180:], 3)
+                logical_blit(self.screen, layer, (0, 0))
             position = self.replay_recorder.position_at(self.replay_arena, self.replay_time, arena.bounds)
             if position:
-                pygame.draw.circle(self.screen, COLORS["player"], position, 18)
-                pygame.draw.circle(self.screen, COLORS["twin"], position, 27, 2)
-        pygame.draw.rect(self.screen, COLORS["panel"], (0, 0, WIDTH, 80))
+                logical_draw.circle(self.screen, COLORS["player"], position, 18)
+                logical_draw.circle(self.screen, COLORS["twin"], position, 27, 2)
+        logical_draw.rect(self.screen, COLORS["panel"], (0, 0, WIDTH, 80))
         draw_text(self.screen, "ПОВТОР СЕССИИ", (28, 19), 26, COLORS["player"], bold=True)
         draw_text(self.screen, f"Арена {self.replay_arena}   •   {self.replay_time:05.1f} сек.", (WIDTH / 2, 22), 20, COLORS["white"], bold=True, anchor="midtop")
         draw_text(self.screen, "1–4 арена   SPACE пауза   ESC назад", (WIDTH - 28, 22), 16, COLORS["muted"], anchor="topright")
@@ -2452,14 +2460,14 @@ class DigitalTwinGame:
         maximum = max((max(row) for row in session.heatmap), default=1) or 1
         cell_width = rect.width / 12
         cell_height = rect.height / 6
-        pygame.draw.rect(self.screen, (9, 15, 27), rect)
+        logical_draw.rect(self.screen, (9, 15, 27), rect)
         for row_index, row in enumerate(session.heatmap):
             for column_index, value in enumerate(row):
                 if not value:
                     continue
                 intensity = math.sqrt(value / maximum)
                 cell_color = tuple(int(18 + (component - 18) * intensity) for component in color)
-                pygame.draw.rect(
+                logical_draw.rect(
                     self.screen,
                     cell_color,
                     (
@@ -2480,8 +2488,8 @@ class DigitalTwinGame:
                 for index, value in enumerate(sampled)
             ]
             if len(points) > 1:
-                pygame.draw.lines(self.screen, COLORS["warning"], False, points, 1)
-        pygame.draw.rect(self.screen, (72, 91, 118), rect, 1)
+                logical_draw.lines(self.screen, COLORS["warning"], False, points, 1)
+        logical_draw.rect(self.screen, (72, 91, 118), rect, 1)
 
     def _draw_tournament(self) -> None:
         self.screen.fill(COLORS["background"])
@@ -2492,9 +2500,9 @@ class DigitalTwinGame:
         first, second = self.tournament.first, self.tournament.second
         left_position = pygame.Vector2(330, 370)
         right_position = pygame.Vector2(950, 370)
-        pygame.draw.circle(self.screen, COLORS["player"], left_position, 42)
-        pygame.draw.circle(self.screen, COLORS["twin"], right_position, 42)
-        pygame.draw.line(self.screen, COLORS["muted"], left_position + pygame.Vector2(50, 0), right_position - pygame.Vector2(50, 0), 2)
+        logical_draw.circle(self.screen, COLORS["player"], left_position, 42)
+        logical_draw.circle(self.screen, COLORS["twin"], right_position, 42)
+        logical_draw.line(self.screen, COLORS["muted"], left_position + pygame.Vector2(50, 0), right_position - pygame.Vector2(50, 0), 2)
         draw_text(self.screen, first.name, (left_position.x, 180), 20, COLORS["player"], bold=True, anchor="midtop")
         draw_text(self.screen, second.name, (right_position.x, 180), 20, COLORS["twin"], bold=True, anchor="midtop")
         draw_bar(self.screen, pygame.Rect(170, 225, 320, 18), first.health, 100, COLORS["health"], "ЗДОРОВЬЕ")

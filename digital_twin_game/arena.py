@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 import pygame
 
+from .hidpi import draw as logical_draw
+
 from .config import COLORS, HEIGHT, PLAY_RECT, WIDTH
 
 
@@ -147,26 +149,26 @@ class Arena:
         surface.fill(COLORS["background"])
         grid_color = COLORS["grid"]
         for x in range(self.bounds.left, self.bounds.right + 1, 40):
-            pygame.draw.line(surface, grid_color, (x, self.bounds.top), (x, self.bounds.bottom), 1)
+            logical_draw.line(surface, grid_color, (x, self.bounds.top), (x, self.bounds.bottom), 1)
         for y in range(self.bounds.top, self.bounds.bottom + 1, 40):
-            pygame.draw.line(surface, grid_color, (self.bounds.left, y), (self.bounds.right, y), 1)
-        pygame.draw.rect(surface, COLORS["accent"], self.bounds, 2, border_radius=8)
+            logical_draw.line(surface, grid_color, (self.bounds.left, y), (self.bounds.right, y), 1)
+        logical_draw.rect(surface, COLORS["accent"], self.bounds, 2, border_radius=8)
         for obstacle in self.obstacles:
-            pygame.draw.rect(surface, (27, 39, 62), obstacle, border_radius=7)
-            pygame.draw.rect(surface, (67, 89, 123), obstacle, 2, border_radius=7)
+            logical_draw.rect(surface, (27, 39, 62), obstacle, border_radius=7)
+            logical_draw.rect(surface, (67, 89, 123), obstacle, 2, border_radius=7)
         for item in self.destructibles:
             ratio = item.health / item.maximum_health
-            pygame.draw.rect(surface, (55, 45, 31), item.rect, border_radius=5)
-            pygame.draw.rect(surface, COLORS["warning"], item.rect, 2, border_radius=5)
-            pygame.draw.line(surface, (118, 82, 40), item.rect.topleft, item.rect.bottomright, 2)
-            pygame.draw.line(surface, (118, 82, 40), item.rect.topright, item.rect.bottomleft, 2)
+            logical_draw.rect(surface, (55, 45, 31), item.rect, border_radius=5)
+            logical_draw.rect(surface, COLORS["warning"], item.rect, 2, border_radius=5)
+            logical_draw.line(surface, (118, 82, 40), item.rect.topleft, item.rect.bottomright, 2)
+            logical_draw.line(surface, (118, 82, 40), item.rect.topright, item.rect.bottomleft, 2)
             health_rect = pygame.Rect(item.rect.left, item.rect.top - 7, item.rect.width, 3)
-            pygame.draw.rect(surface, (48, 35, 33), health_rect)
-            pygame.draw.rect(surface, COLORS["warning"], (health_rect.x, health_rect.y, int(health_rect.width * ratio), health_rect.height))
+            logical_draw.rect(surface, (48, 35, 33), health_rect)
+            logical_draw.rect(surface, COLORS["warning"], (health_rect.x, health_rect.y, int(health_rect.width * ratio), health_rect.height))
         for pack in self.health_packs:
             if not pack.active:
                 continue
             center = (round(pack.position.x), round(pack.position.y))
-            pygame.draw.circle(surface, (24, 68, 53), center, 17)
-            pygame.draw.rect(surface, COLORS["health"], (center[0] - 4, center[1] - 11, 8, 22), border_radius=2)
-            pygame.draw.rect(surface, COLORS["health"], (center[0] - 11, center[1] - 4, 22, 8), border_radius=2)
+            logical_draw.circle(surface, (24, 68, 53), center, 17)
+            logical_draw.rect(surface, COLORS["health"], (center[0] - 4, center[1] - 11, 8, 22), border_radius=2)
+            logical_draw.rect(surface, COLORS["health"], (center[0] - 11, center[1] - 4, 22, 8), border_radius=2)

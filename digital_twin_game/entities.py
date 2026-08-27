@@ -6,10 +6,12 @@ import random
 
 import pygame
 
+from .hidpi import draw as logical_draw
+
 from .actions import PlayerAction
 from .arena import Arena
 from .behavior import BehaviorProfile
-from .config import COLORS, PLAYER_MAX_ENERGY, PLAYER_MAX_HEALTH, PLAYER_RADIUS, PLAYER_SPEED
+from .config import COLORS, HEIGHT, PLAYER_MAX_ENERGY, PLAYER_MAX_HEALTH, PLAYER_RADIUS, PLAYER_SPEED, WIDTH
 from .weapons import WeaponType, weapon_spec
 
 
@@ -43,8 +45,8 @@ class Projectile:
         return self.lifetime > 0
 
     def draw(self, surface: pygame.Surface) -> None:
-        pygame.draw.circle(surface, self.color, self.position, self.radius + 4, 1)
-        pygame.draw.circle(surface, self.color, self.position, self.radius)
+        logical_draw.circle(surface, self.color, self.position, self.radius + 4, 1)
+        logical_draw.circle(surface, self.color, self.position, self.radius)
 
 
 @dataclass
@@ -62,7 +64,7 @@ class SlashEffect:
     def draw(self, surface: pygame.Surface) -> None:
         ratio = max(0.0, min(1.0, self.lifetime / 0.18))
         color = tuple(int(channel * (0.3 + ratio * 0.7)) for channel in self.color)
-        pygame.draw.circle(surface, color, self.position, int(self.radius), 4)
+        logical_draw.circle(surface, color, self.position, int(self.radius), 4)
 
 
 class Player:
@@ -198,16 +200,16 @@ class Player:
 
     def draw(self, surface: pygame.Surface) -> None:
         color = COLORS["white"] if self.flash_timer > 0 else COLORS["player"]
-        pygame.draw.circle(surface, COLORS["player_glow"], self.position, self.radius + 7)
-        pygame.draw.circle(surface, color, self.position, self.radius)
+        logical_draw.circle(surface, COLORS["player_glow"], self.position, self.radius + 7)
+        logical_draw.circle(surface, color, self.position, self.radius)
         nose = self.position + self.facing * (self.radius + 8)
-        pygame.draw.line(surface, COLORS["white"], self.position, nose, 4)
+        logical_draw.line(surface, COLORS["white"], self.position, nose, 4)
         if self.block_active:
-            pygame.draw.circle(surface, COLORS["accent"], self.position, self.radius + 13, 3)
+            logical_draw.circle(surface, COLORS["accent"], self.position, self.radius + 13, 3)
         if self.shield_timer > 0:
-            pygame.draw.circle(surface, COLORS["warning"], self.position, self.radius + 19, 3)
+            logical_draw.circle(surface, COLORS["warning"], self.position, self.radius + 19, 3)
         if self.reflect_timer > 0:
-            pygame.draw.circle(surface, COLORS["white"], self.position, self.radius + 25, 2)
+            logical_draw.circle(surface, COLORS["white"], self.position, self.radius + 25, 2)
 
 
 @dataclass
@@ -233,8 +235,8 @@ class TrapHazard:
     def draw(self, surface: pygame.Surface) -> None:
         color = COLORS["player"] if self.owner == "player" else COLORS["enemy"]
         pulse = 7 + int(math.sin(self.lifetime * 8) * 2)
-        pygame.draw.circle(surface, color, self.position, pulse, 2)
-        pygame.draw.circle(surface, tuple(component // 2 for component in color), self.position, int(self.radius), 1)
+        logical_draw.circle(surface, color, self.position, pulse, 2)
+        logical_draw.circle(surface, tuple(component // 2 for component in color), self.position, int(self.radius), 1)
 
 
 @dataclass
@@ -254,9 +256,9 @@ class TurretHazard:
         return self.lifetime > 0
 
     def draw(self, surface: pygame.Surface) -> None:
-        pygame.draw.circle(surface, (89, 58, 33), self.position, 16)
-        pygame.draw.circle(surface, COLORS["warning"], self.position, 11)
-        pygame.draw.circle(surface, COLORS["enemy"], self.position, 20, 2)
+        logical_draw.circle(surface, (89, 58, 33), self.position, 16)
+        logical_draw.circle(surface, COLORS["warning"], self.position, 11)
+        logical_draw.circle(surface, COLORS["enemy"], self.position, 20, 2)
 
 
 @dataclass
@@ -273,8 +275,8 @@ class Decoy:
         strength = 0.25 + ratio * 0.35
         body = tuple(int(channel * strength) for channel in COLORS["player"])
         outline = tuple(int(channel * strength) for channel in COLORS["white"])
-        pygame.draw.circle(surface, body, self.position, PLAYER_RADIUS)
-        pygame.draw.circle(surface, outline, self.position, PLAYER_RADIUS + 8, 2)
+        logical_draw.circle(surface, body, self.position, PLAYER_RADIUS)
+        logical_draw.circle(surface, outline, self.position, PLAYER_RADIUS + 8, 2)
 
 
 class Enemy:
@@ -521,32 +523,32 @@ class Enemy:
             progress = 1.0 - self.attack_windup / self.attack_windup_total
             warning_color = COLORS["warning"] if progress < 0.7 else COLORS["enemy"]
             if self.queued_attack == "melee":
-                pygame.draw.circle(surface, warning_color, self.position, 72, 2 + int(progress * 3))
+                logical_draw.circle(surface, warning_color, self.position, 72, 2 + int(progress * 3))
             else:
                 target = self.position + self.queued_direction * 560
-                clipped = (bounds or surface.get_rect()).clipline(self.position, target)
+                clipped = (bounds or pygame.Rect(0, 0, WIDTH, HEIGHT)).clipline(self.position, target)
                 if clipped:
-                    pygame.draw.line(surface, warning_color, clipped[0], clipped[1], 2 + int(progress * 2))
+                    logical_draw.line(surface, warning_color, clipped[0], clipped[1], 2 + int(progress * 2))
         color = COLORS["white"] if self.recent_damage > 0 else self.color
-        pygame.draw.circle(surface, tuple(max(0, component // 3) for component in self.color), self.position, self.radius + 7)
-        pygame.draw.circle(surface, color, self.position, self.radius)
+        logical_draw.circle(surface, tuple(max(0, component // 3) for component in self.color), self.position, self.radius + 7)
+        logical_draw.circle(surface, color, self.position, self.radius)
         nose = self.position + self.facing * (self.radius + 7)
-        pygame.draw.line(surface, COLORS["white"], self.position, nose, 3)
+        logical_draw.line(surface, COLORS["white"], self.position, nose, 3)
         if self.kind == "twin":
             phase_colors = {1: COLORS["player"], 2: COLORS["twin"], 3: COLORS["enemy"]}
-            pygame.draw.circle(surface, phase_colors.get(self.phase, COLORS["twin"]), self.position, self.radius + 13, 2 + self.phase // 2)
+            logical_draw.circle(surface, phase_colors.get(self.phase, COLORS["twin"]), self.position, self.radius + 13, 2 + self.phase // 2)
         elif self.kind == "shield":
             normal = safe_normalize(self.facing)
             perpendicular = pygame.Vector2(-normal.y, normal.x)
             center = self.position + normal * 24
-            pygame.draw.line(surface, COLORS["accent"], center - perpendicular * 24, center + perpendicular * 24, 7)
+            logical_draw.line(surface, COLORS["accent"], center - perpendicular * 24, center + perpendicular * 24, 7)
         elif self.kind == "teleporter":
-            pygame.draw.circle(surface, COLORS["accent"], self.position, self.radius + 12, 2)
+            logical_draw.circle(surface, COLORS["accent"], self.position, self.radius + 12, 2)
         elif self.kind == "engineer":
-            pygame.draw.rect(surface, COLORS["warning"], (self.position.x - 7, self.position.y - 7, 14, 14), 2)
+            logical_draw.rect(surface, COLORS["warning"], (self.position.x - 7, self.position.y - 7, 14, 14), 2)
         elif self.kind == "copier":
-            pygame.draw.circle(surface, COLORS["white"], self.position, 7, 2)
+            logical_draw.circle(surface, COLORS["white"], self.position, 7, 2)
         width = 44
         ratio = self.health / self.max_health
-        pygame.draw.rect(surface, (45, 22, 33), (self.position.x - width / 2, self.position.y - 33, width, 5), border_radius=2)
-        pygame.draw.rect(surface, self.color, (self.position.x - width / 2, self.position.y - 33, width * ratio, 5), border_radius=2)
+        logical_draw.rect(surface, (45, 22, 33), (self.position.x - width / 2, self.position.y - 33, width, 5), border_radius=2)
+        logical_draw.rect(surface, self.color, (self.position.x - width / 2, self.position.y - 33, width * ratio, 5), border_radius=2)

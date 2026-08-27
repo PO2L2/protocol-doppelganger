@@ -7,6 +7,7 @@ import random
 
 import pygame
 
+from .hidpi import draw as logical_draw, scale_point, surface_scale
 from .ui import get_font
 
 
@@ -35,7 +36,7 @@ class Particle:
         # Fading the RGB value preserves the look without large allocations.
         brightness = 0.22 + ratio * 0.78
         faded_color = tuple(max(0, min(255, int(channel * brightness))) for channel in self.color)
-        pygame.draw.circle(surface, faded_color, self.position + offset, max(1, int(self.radius * ratio)))
+        logical_draw.circle(surface, faded_color, self.position + offset, max(1, int(self.radius * ratio)))
 
 
 @dataclass
@@ -51,10 +52,12 @@ class FloatingText:
         return self.lifetime > 0
 
     def draw(self, surface: pygame.Surface, offset: pygame.Vector2) -> None:
-        font = get_font(17, True)
+        scale = surface_scale(surface)
+        font = get_font(max(1, round(17 * scale)), True)
         image = font.render(self.text, True, self.color)
         image.set_alpha(max(0, min(255, int(self.lifetime / 0.8 * 255))))
-        surface.blit(image, image.get_rect(center=self.position + offset))
+        physical_position = scale_point(surface, self.position + offset)
+        surface.blit(image, image.get_rect(center=physical_position))
 
 
 class CombatEffects:

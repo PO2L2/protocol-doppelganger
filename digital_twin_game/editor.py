@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pygame
 
+from .hidpi import draw as logical_draw
+
 from .config import COLORS, PLAY_RECT
 
 
@@ -207,46 +209,46 @@ class ArenaEditor:
         animation_time = pygame.time.get_ticks() / 1000.0
         grid_color = tuple(int(channel * 0.76) for channel in COLORS["grid"])
         for x in range(self.bounds.left, self.bounds.right + 1, 40):
-            pygame.draw.line(surface, grid_color, (x, self.bounds.top), (x, self.bounds.bottom))
+            logical_draw.line(surface, grid_color, (x, self.bounds.top), (x, self.bounds.bottom))
         for y in range(self.bounds.top, self.bounds.bottom + 1, 40):
-            pygame.draw.line(surface, grid_color, (self.bounds.left, y), (self.bounds.right, y))
+            logical_draw.line(surface, grid_color, (self.bounds.left, y), (self.bounds.right, y))
         scan_y = self.bounds.top + int((animation_time * 72) % self.bounds.height)
-        pygame.draw.line(surface, (20, 72, 89), (self.bounds.left, scan_y), (self.bounds.right, scan_y), 2)
-        pygame.draw.line(surface, (12, 39, 55), (self.bounds.left, scan_y + 5), (self.bounds.right, scan_y + 5), 1)
-        pygame.draw.rect(surface, COLORS["accent"], self.bounds, 2)
+        logical_draw.line(surface, (20, 72, 89), (self.bounds.left, scan_y), (self.bounds.right, scan_y), 2)
+        logical_draw.line(surface, (12, 39, 55), (self.bounds.left, scan_y + 5), (self.bounds.right, scan_y + 5), 1)
+        logical_draw.rect(surface, COLORS["accent"], self.bounds, 2)
         for index, obstacle in enumerate(self.layout.obstacles):
-            pygame.draw.rect(surface, (35, 52, 80), obstacle, border_radius=5)
+            logical_draw.rect(surface, (35, 52, 80), obstacle, border_radius=5)
             outline = COLORS["warning"] if index == self.selected_obstacle else (77, 100, 139)
-            pygame.draw.rect(surface, outline, obstacle, 3 if index == self.selected_obstacle else 2, border_radius=5)
+            logical_draw.rect(surface, outline, obstacle, 3 if index == self.selected_obstacle else 2, border_radius=5)
             if index == self.selected_obstacle:
                 glow = 5 + int((math.sin(animation_time * 4.5) + 1) * 2)
-                pygame.draw.rect(surface, (112, 77, 24), pygame.Rect(obstacle).inflate(glow, glow), 1, border_radius=7)
+                logical_draw.rect(surface, (112, 77, 24), pygame.Rect(obstacle).inflate(glow, glow), 1, border_radius=7)
         for position in self.layout.health_packs:
-            pygame.draw.circle(surface, COLORS["health"], position, 12)
+            logical_draw.circle(surface, COLORS["health"], position, 12)
             draw_text(surface, "+", position, 20, COLORS["white"], bold=True, anchor="center")
         for destructible in self.layout.destructibles:
             rect = pygame.Rect(destructible)
-            pygame.draw.rect(surface, (55, 45, 31), rect, border_radius=5)
-            pygame.draw.rect(surface, COLORS["warning"], rect, 2, border_radius=5)
-            pygame.draw.line(surface, (118, 82, 40), rect.topleft, rect.bottomright, 2)
-            pygame.draw.line(surface, (118, 82, 40), rect.topright, rect.bottomleft, 2)
-        pygame.draw.circle(surface, COLORS["player"], self.layout.player_spawn, 18)
+            logical_draw.rect(surface, (55, 45, 31), rect, border_radius=5)
+            logical_draw.rect(surface, COLORS["warning"], rect, 2, border_radius=5)
+            logical_draw.line(surface, (118, 82, 40), rect.topleft, rect.bottomright, 2)
+            logical_draw.line(surface, (118, 82, 40), rect.topright, rect.bottomleft, 2)
+        logical_draw.circle(surface, COLORS["player"], self.layout.player_spawn, 18)
         for x, y, kind in self.layout.enemy_spawns:
-            pygame.draw.circle(surface, COLORS["enemy"], (x, y), 18)
+            logical_draw.circle(surface, COLORS["enemy"], (x, y), 18)
             draw_text(surface, kind[:2].upper(), (x, y), 11, COLORS["white"], bold=True, anchor="center")
         objective = self.layout.objective_position
         objective_color = COLORS["warning"] if self.layout.game_mode == "hold" else COLORS["muted"]
         objective_radius = 36 + int((math.sin(animation_time * 3.2) + 1) * 3)
-        pygame.draw.circle(surface, objective_color, objective, objective_radius, 2)
-        pygame.draw.line(surface, objective_color, (objective[0] - 8, objective[1]), (objective[0] + 8, objective[1]), 2)
-        pygame.draw.line(surface, objective_color, (objective[0], objective[1] - 8), (objective[0], objective[1] + 8), 2)
+        logical_draw.circle(surface, objective_color, objective, objective_radius, 2)
+        logical_draw.line(surface, objective_color, (objective[0] - 8, objective[1]), (objective[0] + 8, objective[1]), 2)
+        logical_draw.line(surface, objective_color, (objective[0], objective[1] - 8), (objective[0], objective[1] + 8), 2)
         if self.edit_mode == "place" and self.tool == 1 and self.bounds.collidepoint(pygame.mouse.get_pos()):
             preview_x, preview_y = self._snap(pygame.mouse.get_pos())
             preview_width, preview_height = self.wall_size
             preview = pygame.Rect(0, 0, preview_width, preview_height)
             preview.center = (preview_x, preview_y)
             preview.clamp_ip(self.bounds)
-            pygame.draw.rect(surface, (48, 75, 91), preview, 2, border_radius=5)
+            logical_draw.rect(surface, (48, 75, 91), preview, 2, border_radius=5)
         draw_text(surface, "РЕДАКТОР АРЕН", (30, 18), 26, COLORS["player"], bold=True)
         tools = "1 Стена  2 Аптечка  3 Игрок  4 Враг  5 Цель  6 Контейнер  TAB Вид врага"
         draw_text(surface, tools, (290, 16), 15, COLORS["text"])
