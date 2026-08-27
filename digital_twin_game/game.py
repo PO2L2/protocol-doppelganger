@@ -42,6 +42,7 @@ from .replay import ReplayRecorder
 from .tournament import TournamentFighter, TournamentMatch
 from .ui import draw_bar, draw_metric, draw_panel, draw_text
 from .upgrades import UPGRADE_INFO, UpgradeType
+from .viewport import DisplayViewport
 from .weapons import WEAPON_SPECS, WeaponType
 
 try:
@@ -65,7 +66,12 @@ class DigitalTwinGame:
     def __init__(self, action_model: ActionPredictionModel | None = None) -> None:
         pygame.init()
         pygame.display.set_caption(TITLE)
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.fullscreen = True
+        self.windowed_size = (WIDTH, HEIGHT)
+        self.display_surface = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        self.screen = pygame.Surface((WIDTH, HEIGHT)).convert()
+        self.viewport = DisplayViewport((WIDTH, HEIGHT), self.display_surface.get_size())
+        self.scaled_surface = pygame.Surface(self.viewport.rect.size).convert()
         self.world_surface = pygame.Surface((WIDTH, HEIGHT)).convert()
         self.alpha_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA).convert_alpha()
         self.clock = pygame.time.Clock()
@@ -103,6 +109,7 @@ class DigitalTwinGame:
         self.current_player = self.player_registry.active
         self.player_select_index = max(0, self.player_registry.profiles.index(self.current_player))
         self.player_name_input = ""
+        self.player_name_focused = False
         self.collector = GameplayDataCollector(SAMPLE_INTERVAL, self.current_player.player_id)
         self.data_quality: DataQualityReport = analyze_data_quality([])
         self.calibration_challenge = CalibrationChallenge(1)
@@ -208,21 +215,65 @@ class DigitalTwinGame:
             elif self.state == "tournament" and self.tournament:
                 self.tournament.update(dt)
             self._draw()
+            self._present_frame()
             pygame.display.flip()
         self._save_data()
         pygame.quit()
+
+    def _refresh_viewport(self) -> None:
+        self.viewport.update(self.display_surface.get_size())
+        self.scaled_surface = pygame.Surface(self.viewport.rect.size).convert()
+
+    def _toggle_fullscreen(self) -> None:
+        if self.fullscreen:
+            self.fullscreen = False
+            self.display_surface = pygame.display.set_mode(self.windowed_size, pygame.RESIZABLE)
+        else:
+            current_size = self.display_surface.get_size()
+            if current_size[0] >= 800 and current_size[1] >= 600:
+                self.windowed_size = current_size
+            self.fullscreen = True
+            self.display_surface = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        pygame.display.set_caption(TITLE)
+        self._refresh_viewport()
+
+    def _present_frame(self) -> None:
+        self.display_surface.fill((3, 5, 10))
+        if self.viewport.rect.size == (WIDTH, HEIGHT):
+            frame = self.screen
+        else:
+            pygame.transform.smoothscale(self.screen, self.viewport.rect.size, self.scaled_surface)
+            frame = self.scaled_surface
+        self.display_surface.blit(frame, self.viewport.rect)
+
+    def _mouse_position(self, *, clamp: bool = False) -> tuple[int, int]:
+        return self.viewport.display_to_logical(pygame.mouse.get_pos(), clamp=clamp)
 
     def _handle_events(self) -> None:
         self.explicit_action = None
         self.frame_outcome = ActionOutcome()
         for event in pygame.event.get():
+            if event.type == pygame.VIDEORESIZE and not self.fullscreen:
+                self.windowed_size = (max(800, event.w), max(600, event.h))
+                self.display_surface = pygame.display.set_mode(self.windowed_size, pygame.RESIZABLE)
+                self._refresh_viewport()
+                continue
+            if hasattr(event, "pos"):
+                values = event.dict.copy()
+                values["pos"] = self.viewport.display_to_logical(event.pos)
+                event = pygame.event.Event(event.type, values)
             if event.type == pygame.QUIT:
                 self.running = False
             elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_F11 or (event.key == pygame.K_RETURN and getattr(event, "mod", 0) & pygame.KMOD_ALT):
+                    self._toggle_fullscreen()
+                    continue
                 if event.key == pygame.K_ESCAPE:
                     if self.state == "menu":
                         self.running = False
                     elif self.state in ("editor", "lab", "tournament", "loadout", "weapon_select", "tutorial", "tutorial_play", "upgrade", "player_select"):
+                        if self.state == "player_select":
+                            pygame.key.stop_text_input()
                         self.state = "menu"
                     elif self.state == "model_analysis":
                         self.state = "profile"
@@ -268,8 +319,6 @@ class DigitalTwinGame:
                         self.player_name_input = self.player_name_input[:-1]
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         self._confirm_player_selection()
-                    elif event.unicode and event.unicode.isprintable() and len(self.player_name_input) < 24:
-                        self.player_name_input += event.unicode
                 elif self.state == "tutorial":
                     if event.key in (pygame.K_LEFT, pygame.K_a):
                         self._set_tutorial_page(self.tutorial_page - 1)
@@ -362,6 +411,10 @@ class DigitalTwinGame:
                         self._activate_ability(event.key - pygame.K_1)
                     elif event.key == pygame.K_f:
                         self._perform_feint()
+            elif event.type == pygame.TEXTINPUT and self.state == "player_select" and self.player_name_focused:
+                available = 24 - len(self.player_name_input)
+                if available > 0:
+                    self.player_name_input += "".join(character for character in event.text if character.isprintable())[:available]
             elif self.state == "menu" and event.type == pygame.MOUSEMOTION:
                 for index, rect in enumerate(self._menu_button_rects()):
                     if rect.collidepoint(event.pos):
@@ -374,10 +427,15 @@ class DigitalTwinGame:
                         self._activate_menu_option(index)
                         break
             elif self.state == "player_select" and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self._player_name_input_rect().collidepoint(event.pos):
+                    self.player_name_focused = True
+                    pygame.key.start_text_input()
                 for index, rect in enumerate(self._player_card_rects()):
                     if rect.collidepoint(event.pos):
                         self.player_select_index = index
                         self.player_name_input = ""
+                        self.player_name_focused = False
+                        pygame.key.stop_text_input()
                         break
                 if self._player_continue_rect().collidepoint(event.pos):
                     self._confirm_player_selection()
@@ -396,11 +454,18 @@ class DigitalTwinGame:
                     else:
                         self._set_tutorial_page(self.tutorial_page + 1)
             elif self.state == "loadout" and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self._loadout_continue_rect().collidepoint(event.pos) and len(self.loadout_selection) == 3:
+                    self.selected_abilities = [ability for ability in AbilityType if ability in self.loadout_selection]
+                    self._start_session()
+                    continue
                 for index, rect in enumerate(self._loadout_card_rects()):
                     if rect.collidepoint(event.pos):
                         self._toggle_loadout_ability(index)
                         break
             elif self.state == "weapon_select" and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self._weapon_continue_rect().collidepoint(event.pos):
+                    self._open_loadout()
+                    continue
                 for index, rect in enumerate(self._weapon_card_rects()):
                     if rect.collidepoint(event.pos):
                         self.selected_weapon = list(WeaponType)[index]
@@ -436,6 +501,8 @@ class DigitalTwinGame:
         self.current_player = self.player_registry.active
         self.player_select_index = self._visible_player_profiles().index(self.current_player)
         self.player_name_input = ""
+        self.player_name_focused = True
+        pygame.key.start_text_input()
         self.state = "player_select"
 
     def _visible_player_profiles(self) -> list[PlayerProfileRecord]:
@@ -446,7 +513,15 @@ class DigitalTwinGame:
 
     @staticmethod
     def _player_continue_rect() -> pygame.Rect:
-        return pygame.Rect(WIDTH // 2 - 205, 624, 410, 54)
+        return pygame.Rect(WIDTH // 2 - 205, 620, 410, 48)
+
+    @staticmethod
+    def _player_name_input_rect() -> pygame.Rect:
+        return pygame.Rect(330, 570, 620, 42)
+
+    @staticmethod
+    def _profile_badge_rect() -> pygame.Rect:
+        return pygame.Rect(WIDTH - 286, 18, 260, 38)
 
     def _player_card_rects(self) -> list[pygame.Rect]:
         visible = self._visible_player_profiles()
@@ -460,6 +535,8 @@ class DigitalTwinGame:
             self.player_select_index = max(0, min(self.player_select_index, len(profiles) - 1))
             self.current_player = self.player_registry.select(profiles[self.player_select_index].player_id)
         self.player_name_input = ""
+        self.player_name_focused = False
+        pygame.key.stop_text_input()
         self._open_weapon_select()
 
     def _open_loadout(self) -> None:
@@ -474,6 +551,10 @@ class DigitalTwinGame:
     @staticmethod
     def _weapon_card_rects() -> list[pygame.Rect]:
         return [pygame.Rect(130 + index % 2 * 520, 205 + index // 2 * 160, 490, 125) for index in range(len(WeaponType))]
+
+    @staticmethod
+    def _weapon_continue_rect() -> pygame.Rect:
+        return pygame.Rect(WIDTH // 2 - 260, 610, 520, 48)
 
     @staticmethod
     def _upgrade_card_rects() -> list[pygame.Rect]:
@@ -501,6 +582,10 @@ class DigitalTwinGame:
     @staticmethod
     def _loadout_card_rects() -> list[pygame.Rect]:
         return [pygame.Rect(145 + index % 2 * 510, 150 + index // 2 * 112, 470, 88) for index in range(len(AbilityType))]
+
+    @staticmethod
+    def _loadout_continue_rect() -> pygame.Rect:
+        return pygame.Rect(WIDTH // 2 - 220, 650, 440, 48)
 
     def _toggle_loadout_ability(self, index: int) -> None:
         ability = list(AbilityType)[index]
@@ -576,7 +661,7 @@ class DigitalTwinGame:
                 return
 
         target = self.enemies[0]
-        mouse_position = pygame.Vector2(pygame.mouse.get_pos())
+        mouse_position = pygame.Vector2(self._mouse_position(clamp=True))
         mouse_buttons = pygame.mouse.get_pressed(3)
         if self.tutorial_step == 1 and mouse_buttons[0]:
             fired = self.player.fire(mouse_position)
@@ -830,7 +915,7 @@ class DigitalTwinGame:
         if ability is None:
             return
         self.player.last_used_ability = ability.value
-        mouse = pygame.Vector2(pygame.mouse.get_pos())
+        mouse = pygame.Vector2(self._mouse_position(clamp=True))
         if ability == AbilityType.TRAP:
             self.hazards.append(TrapHazard(self.player.position.copy(), "player"))
         elif ability == AbilityType.WAVE:
@@ -931,7 +1016,7 @@ class DigitalTwinGame:
                 if self.custom_hold_progress >= 15.0:
                     self._complete_custom_arena("Точка успешно удержана")
                     return
-        mouse_position = pygame.Vector2(pygame.mouse.get_pos())
+        mouse_position = pygame.Vector2(self._mouse_position(clamp=True))
         mouse_buttons = pygame.mouse.get_pressed(3)
         if mouse_buttons[0]:
             fired_projectiles = self.player.fire(mouse_position)
@@ -1403,16 +1488,37 @@ class DigitalTwinGame:
         elif self.state == "tournament":
             self._draw_tournament()
 
+    def _draw_action_button(self, rect: pygame.Rect, label: str, *, enabled: bool = True) -> None:
+        hovered = enabled and rect.collidepoint(self._mouse_position())
+        if enabled:
+            fill = (25, 71, 75) if hovered else (20, 48, 61)
+            border = COLORS["player"]
+            text_color = COLORS["white"]
+        else:
+            fill = (17, 27, 42)
+            border = (51, 67, 91)
+            text_color = COLORS["muted"]
+        animated_rect = rect.inflate(6, 4) if hovered else rect
+        pygame.draw.rect(self.screen, fill, animated_rect, border_radius=11)
+        pygame.draw.rect(self.screen, border, animated_rect, 2, border_radius=11)
+        draw_text(self.screen, label, animated_rect.center, 18, text_color, bold=True, anchor="center")
+
     def _draw_menu(self) -> None:
         self.animated_background.draw(self.screen, 1.0)
+        profile_rect = self._profile_badge_rect()
+        pygame.draw.rect(self.screen, (10, 25, 38), profile_rect, border_radius=9)
+        pygame.draw.rect(self.screen, (40, 91, 103), profile_rect, 1, border_radius=9)
+        visible_profile_name = self.current_player.name
+        if len(visible_profile_name) > 18:
+            visible_profile_name = visible_profile_name[:17] + "…"
         draw_text(
             self.screen,
-            f"Профиль: {self.current_player.name}",
-            (WIDTH - 26, 22),
+            f"Профиль: {visible_profile_name}",
+            (profile_rect.left + 14, profile_rect.centery),
             14,
             COLORS["player"],
             bold=True,
-            anchor="topright",
+            anchor="midleft",
         )
         float_y = 0.0
         pulse = 0.65
@@ -1426,7 +1532,7 @@ class DigitalTwinGame:
         draw_text(self.screen, "ДВОЙНИК", (WIDTH / 2, 105 + float_y), 68, COLORS["player"], bold=True, anchor="midtop")
         draw_text(self.screen, "Игра изучает твои привычки. Финальный противник — ты сам.", (WIDTH / 2, 198), 21, anchor="midtop")
         labels = ["НАЧАТЬ ИГРУ", "РЕДАКТОР", "ОБУЧЕНИЕ МЕХАНИКАМ"]
-        mouse_position = pygame.mouse.get_pos()
+        mouse_position = self._mouse_position()
         for index, (label, rect) in enumerate(zip(labels, self._menu_button_rects())):
             selected = index == self.menu_selected or rect.collidepoint(mouse_position)
             target = 1.0 if selected else 0.0
@@ -1450,7 +1556,7 @@ class DigitalTwinGame:
         demo_color = COLORS["health"] if self.demo_mode else COLORS["muted"]
         demo_text = "ВКЛЮЧЁН" if self.demo_mode else "выключен"
         draw_text(self.screen, f"F9 — конкурсный демо-режим: {demo_text}", (WIDTH / 2, 634), 14, demo_color, bold=self.demo_mode, anchor="midtop")
-        draw_text(self.screen, "ESC — выход", (WIDTH / 2, 674), 14, COLORS["muted"], anchor="midtop")
+        draw_text(self.screen, "F11 — оконный режим   •   ESC — выход", (WIDTH / 2, 674), 14, COLORS["muted"], anchor="midtop")
 
     def _draw_player_select(self) -> None:
         self.animated_background.draw(self.screen, 0.72)
@@ -1463,7 +1569,7 @@ class DigitalTwinGame:
             COLORS["muted"],
             anchor="midtop",
         )
-        mouse = pygame.mouse.get_pos()
+        mouse = self._mouse_position()
         profiles = self._visible_player_profiles()
         for index, (profile, rect) in enumerate(zip(profiles, self._player_card_rects())):
             selected = index == self.player_select_index and not self.player_name_input
@@ -1481,16 +1587,35 @@ class DigitalTwinGame:
                 COLORS["muted"],
                 anchor="topright",
             )
-        input_rect = pygame.Rect(330, 570, 620, 42)
+        input_rect = self._player_name_input_rect()
+        draw_text(
+            self.screen,
+            "НОВЫЙ ПРОФИЛЬ — нажмите сюда и введите имя",
+            (input_rect.left, input_rect.top - 25),
+            14,
+            COLORS["player"] if self.player_name_focused else COLORS["muted"],
+            bold=self.player_name_focused,
+        )
         pygame.draw.rect(self.screen, (10, 18, 31), input_rect, border_radius=9)
-        pygame.draw.rect(self.screen, COLORS["player"] if self.player_name_input else (62, 82, 109), input_rect, 2, border_radius=9)
-        input_text = self.player_name_input + ("|" if int(self.ui_time * 2) % 2 == 0 else "") if self.player_name_input else "Начните печатать имя нового игрока…"
-        draw_text(self.screen, input_text, (input_rect.left + 17, input_rect.top + 10), 17, COLORS["white"] if self.player_name_input else COLORS["muted"])
+        input_hovered = input_rect.collidepoint(mouse)
+        input_border = COLORS["player"] if self.player_name_focused or input_hovered else (62, 82, 109)
+        pygame.draw.rect(self.screen, input_border, input_rect, 2, border_radius=9)
+        input_text = self.player_name_input or "Введите имя нового игрока…"
+        text_rect = draw_text(
+            self.screen,
+            input_text,
+            (input_rect.left + 17, input_rect.top + 10),
+            17,
+            COLORS["white"] if self.player_name_input else COLORS["muted"],
+        )
+        if self.player_name_focused and int(self.ui_time * 2) % 2 == 0:
+            cursor_x = text_rect.right + 2 if self.player_name_input else input_rect.left + 17
+            pygame.draw.line(self.screen, COLORS["player"], (cursor_x, input_rect.top + 9), (cursor_x, input_rect.bottom - 9), 2)
         continue_rect = self._player_continue_rect()
         pygame.draw.rect(self.screen, (25, 65, 68), continue_rect, border_radius=11)
         pygame.draw.rect(self.screen, COLORS["player"], continue_rect, 2, border_radius=11)
         draw_text(self.screen, "ENTER — ПРОДОЛЖИТЬ", continue_rect.center, 19, COLORS["white"], bold=True, anchor="center")
-        draw_text(self.screen, "ESC — главное меню", (WIDTH / 2, 690), 13, COLORS["muted"], anchor="midbottom")
+        draw_text(self.screen, "ESC — главное меню", (WIDTH / 2, 706), 13, COLORS["muted"], anchor="midbottom")
 
     def _draw_tutorial(self) -> None:
         pages = [
@@ -1547,7 +1672,7 @@ class DigitalTwinGame:
             pygame.draw.circle(self.screen, color, (WIDTH // 2 - 48 + index * 24, 608), 6)
         back, forward = self._tutorial_navigation_rects()
         for rect, label in ((back, "← НАЗАД"), (forward, "НАЧАТЬ ПРАКТИКУ" if self.tutorial_page == 4 else "ДАЛЕЕ →")):
-            hovered = rect.collidepoint(pygame.mouse.get_pos())
+            hovered = rect.collidepoint(self._mouse_position())
             pygame.draw.rect(self.screen, (24, 55, 67) if hovered else COLORS["panel"], rect, border_radius=9)
             pygame.draw.rect(self.screen, COLORS["player"] if hovered else (61, 79, 108), rect, 2, border_radius=9)
             draw_text(self.screen, label, rect.center, 17, COLORS["white"], bold=True, anchor="center")
@@ -1612,7 +1737,7 @@ class DigitalTwinGame:
         draw_text(self.screen, "ВЫБЕРИТЕ ТРИ СПОСОБНОСТИ", (WIDTH / 2, 42 + title_offset + title_float), 37, COLORS["player"], bold=True, anchor="midtop")
         draw_text(self.screen, "Нажимайте 1–7 или выбирайте мышью. Двойник получит тот же набор.", (WIDTH / 2, 96 + title_offset), 18, COLORS["muted"], anchor="midtop")
         abilities = list(AbilityType)
-        mouse_position = pygame.mouse.get_pos()
+        mouse_position = self._mouse_position()
         for index, (ability, base_rect) in enumerate(zip(abilities, self._loadout_card_rects())):
             progress = max(0.0, min(1.0, (self.loadout_intro - index * 0.045) / 0.73))
             card_eased = 1.0 - (1.0 - progress) ** 3
@@ -1644,14 +1769,17 @@ class DigitalTwinGame:
         status = f"Выбрано: {len(self.loadout_selection)}/3"
         draw_text(self.screen, status, (WIDTH / 2, 615), 21, COLORS["health"] if len(self.loadout_selection) == 3 else COLORS["warning"], bold=True, anchor="midtop")
         ready = len(self.loadout_selection) == 3
-        ready_color = COLORS["white"] if ready else COLORS["text"]
-        draw_text(self.screen, "ENTER — НАЧАТЬ" if ready else "Нужно выбрать ровно три", (WIDTH / 2, 660), 20, ready_color, anchor="midtop")
+        self._draw_action_button(
+            self._loadout_continue_rect(),
+            "НАЧАТЬ" if ready else "НУЖНО ВЫБРАТЬ РОВНО ТРИ",
+            enabled=ready,
+        )
 
     def _draw_weapon_select(self) -> None:
         self.animated_background.draw(self.screen, 0.68)
         draw_text(self.screen, "ВЫБЕРИТЕ ОРУЖИЕ", (WIDTH / 2, 54), 39, COLORS["player"], bold=True, anchor="midtop")
         draw_text(self.screen, "Оружие влияет на дистанцию, темп и поведенческий профиль.", (WIDTH / 2, 108), 18, COLORS["muted"], anchor="midtop")
-        mouse_position = pygame.mouse.get_pos()
+        mouse_position = self._mouse_position()
         for index, (weapon, base_rect) in enumerate(zip(WeaponType, self._weapon_card_rects())):
             progress = max(0.0, min(1.0, (self.weapon_intro - index * 0.07) / 0.72))
             eased = 1.0 - (1.0 - progress) ** 3
@@ -1670,14 +1798,14 @@ class DigitalTwinGame:
             stats = f"Урон {spec.ranged_damage:.0f}   •   Ближний {spec.melee_damage:.0f}   •   Энергия {spec.energy_cost:.0f}"
             draw_text(self.screen, stats, (rect.left + 60, rect.top + 87), 14, COLORS["player"] if selected else COLORS["muted"])
         draw_text(self.screen, f"Выбрано: {WEAPON_SPECS[self.selected_weapon].name}", (WIDTH / 2, 565), 20, COLORS["health"], bold=True, anchor="midtop")
-        draw_text(self.screen, "ENTER — ВЫБРАТЬ СПОСОБНОСТИ", (WIDTH / 2, 625), 20, COLORS["white"], anchor="midtop")
+        self._draw_action_button(self._weapon_continue_rect(), "ВЫБРАТЬ СПОСОБНОСТИ")
         draw_text(self.screen, "ESC — главное меню", (WIDTH / 2, 672), 14, COLORS["muted"], anchor="midtop")
 
     def _draw_upgrade_select(self) -> None:
         self.animated_background.draw(self.screen, 0.62)
         draw_text(self.screen, "УСИЛЕНИЕ ПРОТОКОЛА", (WIDTH / 2, 58), 38, COLORS["player"], bold=True, anchor="midtop")
         draw_text(self.screen, f"Калибровка {self.pending_arena_id - 1} завершена. Выберите одно постоянное улучшение.", (WIDTH / 2, 112), 18, COLORS["muted"], anchor="midtop")
-        mouse_position = pygame.mouse.get_pos()
+        mouse_position = self._mouse_position()
         for index, (upgrade, rect) in enumerate(zip(self.upgrade_choices, self._upgrade_card_rects())):
             hovered = rect.collidepoint(mouse_position)
             fill = (24, 52, 61) if hovered else COLORS["panel"]

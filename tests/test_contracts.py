@@ -38,6 +38,7 @@ from digital_twin_game.sequence_data import (
 )
 from digital_twin_game.torch_model import TorchSequenceModel, torch_available
 from digital_twin_game.tournament import TournamentFighter, TournamentMatch
+from digital_twin_game.viewport import DisplayViewport, SUPPORTED_DISPLAY_SIZES
 from digital_twin_game.weapons import WeaponType
 
 
@@ -54,6 +55,45 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(len(FEATURE_NAMES), 25)
         self.assertEqual(ACTION_COUNT, 10)
         self.assertEqual(len(PlayerAction), 10)
+
+    def test_all_requested_display_sizes_preserve_aspect_ratio(self) -> None:
+        for display_size in SUPPORTED_DISPLAY_SIZES:
+            with self.subTest(display_size=display_size):
+                viewport = DisplayViewport((1280, 720), display_size)
+                self.assertLessEqual(viewport.rect.width, display_size[0])
+                self.assertLessEqual(viewport.rect.height, display_size[1])
+                self.assertAlmostEqual(viewport.rect.width / viewport.rect.height, 16 / 9, places=2)
+                display_center = viewport.logical_to_display((640, 360))
+                logical_center = viewport.display_to_logical(display_center)
+                self.assertLessEqual(abs(logical_center[0] - 640), 1)
+                self.assertLessEqual(abs(logical_center[1] - 360), 1)
+
+    def test_letterbox_does_not_activate_ui_outside_game_area(self) -> None:
+        viewport = DisplayViewport((1280, 720), (1024, 768))
+        self.assertGreater(viewport.rect.top, 0)
+        self.assertEqual(viewport.display_to_logical((10, 10)), (-10_000, -10_000))
+        self.assertEqual(viewport.display_to_logical((10, 10), clamp=True)[1], 0)
+
+    def test_selection_continue_buttons_are_clickable(self) -> None:
+        game = DigitalTwinGame()
+        game.state = "weapon_select"
+        weapon_click = game.viewport.logical_to_display(game._weapon_continue_rect().center)
+        pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": weapon_click}))
+        game._handle_events()
+        self.assertEqual(game.state, "loadout")
+
+        game.loadout_selection = set(list(AbilityType)[:3])
+        loadout_click = game.viewport.logical_to_display(game._loadout_continue_rect().center)
+        pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": loadout_click}))
+        game._handle_events()
+        self.assertEqual(game.state, "training")
+
+    def test_player_name_accepts_text_input(self) -> None:
+        game = DigitalTwinGame()
+        game._open_player_select()
+        pygame.event.post(pygame.event.Event(pygame.TEXTINPUT, {"text": "Игрок"}))
+        game._handle_events()
+        self.assertEqual(game.player_name_input, "Игрок")
 
     def test_real_neural_model_has_expected_architecture(self) -> None:
         model = NeuralActionModel(seed=1)
