@@ -121,6 +121,12 @@ class ArenaEditor:
     def _snap(self, position: tuple[int, int], grid: int = 40) -> tuple[int, int]:
         return round(position[0] / grid) * grid, round(position[1] / grid) * grid
 
+    def _clamp_point(self, position: tuple[int, int], margin: int) -> tuple[int, int]:
+        return (
+            max(self.bounds.left + margin, min(self.bounds.right - margin, position[0])),
+            max(self.bounds.top + margin, min(self.bounds.bottom - margin, position[1])),
+        )
+
     def wall_preview_rect(self, position: tuple[int, int]) -> pygame.Rect:
         preview_x, preview_y = self._snap(position)
         preview_width, preview_height = self.wall_size
@@ -138,13 +144,16 @@ class ArenaEditor:
                 self.layout.obstacles.append(tuple(rect))
                 self.selected_obstacle = len(self.layout.obstacles) - 1
         elif self.tool == 2:
+            x, y = self._clamp_point((x, y), 18)
             self.layout.health_packs.append((x, y))
         elif self.tool == 3:
+            x, y = self._clamp_point((x, y), 20)
             self.layout.player_spawn = (x, y)
         elif self.tool == 4:
+            x, y = self._clamp_point((x, y), 22)
             self.layout.enemy_spawns.append((x, y, self.enemy_kind))
         elif self.tool == 5:
-            self.layout.objective_position = self.bounds.clamp(pygame.Rect(x - 1, y - 1, 2, 2)).center
+            self.layout.objective_position = self._clamp_point((x, y), 40)
         elif self.tool == 6:
             crate = pygame.Rect(x - 24, y - 24, 48, 48).clamp(self.bounds)
             occupied = [pygame.Rect(item) for item in self.layout.obstacles + self.layout.destructibles]

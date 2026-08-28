@@ -18,7 +18,7 @@ from digital_twin_game.behavior import BehaviorProfile
 from digital_twin_game.data import ActionOutcome, GameplayDataCollector, TrainingSample
 from digital_twin_game.data_quality import analyze_data_quality
 from digital_twin_game.calibration import CalibrationChallenge
-from digital_twin_game.entities import Enemy, Player
+from digital_twin_game.entities import Enemy, Player, Projectile, segment_intersects_circle
 from digital_twin_game.editor import ArenaEditor, ArenaLayout
 from digital_twin_game.features import build_feature_vector
 from digital_twin_game.game import DigitalTwinGame
@@ -417,6 +417,23 @@ class ContractTests(unittest.TestCase):
         preview = editor.wall_preview_rect(logical_mouse)
         self.assertEqual(preview.center, (1000, 400))
 
+    def test_editor_keeps_point_objects_inside_arena(self) -> None:
+        editor = ArenaEditor()
+        outside_corner = (editor.bounds.right - 1, editor.bounds.top + 1)
+        for tool, margin in ((2, 18), (3, 20), (4, 22), (5, 40)):
+            editor.tool = tool
+            editor._place(outside_corner)
+            if tool == 2:
+                point = editor.layout.health_packs[-1]
+            elif tool == 3:
+                point = editor.layout.player_spawn
+            elif tool == 4:
+                point = editor.layout.enemy_spawns[-1][:2]
+            else:
+                point = editor.layout.objective_position
+            self.assertLessEqual(point[0], editor.bounds.right - margin)
+            self.assertGreaterEqual(point[1], editor.bounds.top + margin)
+
     def test_destructible_object_takes_damage(self) -> None:
         arena = Arena(1)
         target = arena.destructibles[0]
@@ -450,6 +467,62 @@ class ContractTests(unittest.TestCase):
         hit, _ = player.melee(outside_cursor, [enemy])
         self.assertTrue(hit)
         self.assertLess(enemy.health, original_health)
+
+    def test_melee_does_not_hit_through_wall(self) -> None:
+        arena = Arena(1)
+        arena.obstacles = [pygame.Rect(290, 200, 20, 300)]
+        arena.destructibles = []
+        player = Player((270, 350))
+        enemy = Enemy((330, 350), "assault")
+        original_health = enemy.health
+        hit, _ = player.melee(enemy.position, [enemy], arena.has_line_of_sight)
+        self.assertFalse(hit)
+        self.assertEqual(enemy.health, original_health)
+
+    def test_large_movement_cannot_tunnel_through_thin_wall(self) -> None:
+        arena = Arena(1)
+        arena.obstacles = [pygame.Rect(300, 150, 20, 400)]
+        arena.destructibles = []
+        result = arena.move_circle(pygame.Vector2(250, 350), pygame.Vector2(160, 0), 18)
+        self.assertLessEqual(result.x, arena.obstacles[0].left - 18)
+
+    def test_place_circle_recovers_spawn_from_wall(self) -> None:
+        arena = Arena(1)
+        arena.obstacles = [pygame.Rect(500, 300, 200, 200)]
+        arena.destructibles = []
+        result = arena.place_circle(pygame.Vector2(600, 400), 20)
+        self.assertFalse(arena._circle_collides(result, 20))
+        self.assertTrue(arena.bounds.collidepoint(result))
+
+    def test_fast_projectile_segment_hits_crossed_target(self) -> None:
+        projectile = Projectile(pygame.Vector2(100, 300), pygame.Vector2(1000, 0), 10, "player", (255, 255, 255))
+        arena = Arena(1)
+        arena.obstacles = []
+        arena.destructibles = []
+        self.assertTrue(projectile.update(0.05, arena))
+        self.assertTrue(
+            segment_intersects_circle(
+                projectile.previous_position,
+                projectile.position,
+                pygame.Vector2(125, 300),
+                12,
+            )
+        )
+
+    def test_game_applies_fast_projectile_segment_hit(self) -> None:
+        game = DigitalTwinGame()
+        game.state = "custom"
+        game.arena.obstacles = []
+        game.arena.destructibles = []
+        enemy = Enemy((125, 300), "assault")
+        game.enemies = [enemy]
+        game.projectiles = [
+            Projectile(pygame.Vector2(100, 300), pygame.Vector2(1000, 0), 10, "player", (255, 255, 255))
+        ]
+        original_health = enemy.health
+        game._update_projectiles(0.05)
+        self.assertLess(enemy.health, original_health)
+        self.assertFalse(game.projectiles)
 
     def test_main_menu_has_three_actions(self) -> None:
         game = DigitalTwinGame()

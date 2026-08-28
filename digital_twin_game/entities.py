@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 import random
 
@@ -19,6 +19,20 @@ def safe_normalize(vector: pygame.Vector2) -> pygame.Vector2:
     return vector.normalize() if vector.length_squared() > 0.0001 else pygame.Vector2()
 
 
+def segment_intersects_circle(
+    start: pygame.Vector2,
+    end: pygame.Vector2,
+    center: pygame.Vector2,
+    radius: float,
+) -> bool:
+    segment = end - start
+    if not segment.length_squared():
+        return start.distance_squared_to(center) <= radius * radius
+    ratio = max(0.0, min(1.0, (center - start).dot(segment) / segment.length_squared()))
+    closest = start + segment * ratio
+    return closest.distance_squared_to(center) <= radius * radius
+
+
 @dataclass
 class Projectile:
     position: pygame.Vector2
@@ -29,9 +43,14 @@ class Projectile:
     radius: int = 6
     lifetime: float = 2.0
     impact_position: pygame.Vector2 | None = None
+    previous_position: pygame.Vector2 = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.previous_position = self.position.copy()
 
     def update(self, dt: float, arena: Arena) -> bool:
         previous = self.position.copy()
+        self.previous_position = previous
         self.position += self.velocity * dt
         self.lifetime -= dt
         if not arena.bounds.collidepoint(self.position):
@@ -153,7 +172,7 @@ class Player:
             for angle in angles
         ]
 
-    def melee(self, target: pygame.Vector2, enemies: list[Enemy]) -> tuple[bool, SlashEffect | None]:
+    def melee(self, target: pygame.Vector2, enemies: list[Enemy], line_of_sight=None) -> tuple[bool, SlashEffect | None]:
         spec = weapon_spec(self.weapon)
         melee_cost = 13 if self.weapon == WeaponType.BLADES else 15
         if self.melee_cooldown > 0 or self.energy < melee_cost:
@@ -162,7 +181,9 @@ class Player:
         candidates = [
             enemy
             for enemy in enemies
-            if enemy.alive and enemy.position.distance_to(self.position) <= spec.melee_range + enemy.radius
+            if enemy.alive
+            and enemy.position.distance_to(self.position) <= spec.melee_range + enemy.radius
+            and (line_of_sight is None or line_of_sight(self.position, enemy.position))
         ]
         attack_facing = direction if direction.length_squared() else self.facing
         aimed_candidates = [
@@ -391,7 +412,7 @@ class Enemy:
             self.velocity.update(0, 0)
             self.attack_windup -= dt
             if self.attack_windup <= 0:
-                self._release_attack(player, projectiles, synchronization)
+                self._release_attack(player, projectiles, synchronization, arena=arena)
             return
 
         preferred_by_kind = {
@@ -505,8 +526,8 @@ class Enemy:
         random.shuffle(candidates)
         for candidate in candidates:
             circle = pygame.Rect(candidate.x - self.radius, candidate.y - self.radius, self.radius * 2, self.radius * 2)
-            if not any(circle.colliderect(obstacle) for obstacle in arena.obstacles):
-                self.position = candidate
+            if not any(circle.colliderect(obstacle) for obstacle in arena.collision_rects):
+                self.position = arena.place_circle(candidate, self.radius)
                 return
 
     def _queue_attack(self, kind: str, direction: pygame.Vector2, duration: float) -> None:
@@ -515,9 +536,16 @@ class Enemy:
         self.attack_windup = duration
         self.attack_windup_total = duration
 
-    def _release_attack(self, player: Player, projectiles: list[Projectile], synchronization: float) -> None:
+    def _release_attack(
+        self,
+        player: Player,
+        projectiles: list[Projectile],
+        synchronization: float,
+        arena: Arena | None = None,
+    ) -> None:
         if self.queued_attack == "melee":
-            if self.position.distance_to(player.position) < 82:
+            visible = arena is None or arena.has_line_of_sight(self.position, player.position)
+            if self.position.distance_to(player.position) < 82 and visible:
                 base_damage = 19 if self.kind == "twin" else (13 if self.kind == "assault" else 16)
                 player.take_damage(base_damage * (1.0 + synchronization * 0.12))
                 if self.kind == "copier":

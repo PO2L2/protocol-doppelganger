@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import pygame
@@ -108,20 +109,58 @@ class Arena:
     def from_layout(cls, layout) -> "Arena":
         arena = cls(5)
         arena.obstacles = [pygame.Rect(item) for item in layout.obstacles]
-        arena.health_packs = [HealthPack(pygame.Vector2(item)) for item in layout.health_packs]
         arena.destructibles = [DestructibleObject(pygame.Rect(item)) for item in getattr(layout, "destructibles", [])]
+        arena.health_packs = [HealthPack(arena.place_circle(pygame.Vector2(item), 17)) for item in layout.health_packs]
         return arena
 
     def move_circle(self, position: pygame.Vector2, delta: pygame.Vector2, radius: float) -> pygame.Vector2:
+        longest_axis = max(abs(delta.x), abs(delta.y))
+        step_limit = max(6.0, radius * 0.55)
+        steps = max(1, math.ceil(longest_axis / step_limit))
+        step = delta / steps
         result = position.copy()
-        result.x += delta.x
-        result.x = max(self.bounds.left + radius, min(self.bounds.right - radius, result.x))
-        result = self._resolve_axis(result, radius, horizontal=True, direction=delta.x)
+        for _ in range(steps):
+            result.x += step.x
+            result.x = max(self.bounds.left + radius, min(self.bounds.right - radius, result.x))
+            result = self._resolve_axis(result, radius, horizontal=True, direction=step.x)
+            result.x = max(self.bounds.left + radius, min(self.bounds.right - radius, result.x))
 
-        result.y += delta.y
-        result.y = max(self.bounds.top + radius, min(self.bounds.bottom - radius, result.y))
-        result = self._resolve_axis(result, radius, horizontal=False, direction=delta.y)
+            result.y += step.y
+            result.y = max(self.bounds.top + radius, min(self.bounds.bottom - radius, result.y))
+            result = self._resolve_axis(result, radius, horizontal=False, direction=step.y)
+            result.y = max(self.bounds.top + radius, min(self.bounds.bottom - radius, result.y))
         return result
+
+    def place_circle(self, position: pygame.Vector2, radius: float) -> pygame.Vector2:
+        target = pygame.Vector2(
+            max(self.bounds.left + radius, min(self.bounds.right - radius, position.x)),
+            max(self.bounds.top + radius, min(self.bounds.bottom - radius, position.y)),
+        )
+        if not self._circle_collides(target, radius):
+            return target
+
+        # Saved editor layouts can contain an old spawn point inside a wall.
+        # Search outwards deterministically so loading such a map stays playable.
+        radial_step = max(12.0, radius)
+        maximum_distance = math.hypot(self.bounds.width, self.bounds.height)
+        distance = radial_step
+        while distance <= maximum_distance:
+            for angle in range(0, 360, 15):
+                candidate = target + pygame.Vector2(distance, 0).rotate(angle)
+                candidate.x = max(self.bounds.left + radius, min(self.bounds.right - radius, candidate.x))
+                candidate.y = max(self.bounds.top + radius, min(self.bounds.bottom - radius, candidate.y))
+                if not self._circle_collides(candidate, radius):
+                    return candidate
+            distance += radial_step
+        return pygame.Vector2(self.bounds.center)
+
+    def _circle_collides(self, position: pygame.Vector2, radius: float) -> bool:
+        for obstacle in self.collision_rects:
+            nearest_x = max(obstacle.left, min(obstacle.right, position.x))
+            nearest_y = max(obstacle.top, min(obstacle.bottom, position.y))
+            if (position.x - nearest_x) ** 2 + (position.y - nearest_y) ** 2 < radius * radius:
+                return True
+        return False
 
     def _resolve_axis(
         self,

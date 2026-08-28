@@ -31,7 +31,7 @@ from .config import (
 from .data import ActionOutcome, GameplayDataCollector
 from .data_quality import DataQualityReport, analyze_data_quality
 from .editor import GAME_MODE_NAMES, ArenaEditor, ArenaLayout
-from .entities import Decoy, Enemy, Player, Projectile, SlashEffect, TrapHazard, TurretHazard
+from .entities import Decoy, Enemy, Player, Projectile, SlashEffect, TrapHazard, TurretHazard, segment_intersects_circle
 from .features import build_feature_vector, classify_movement_action
 from .fx import AudioManager, CombatEffects
 from .hidpi import blit as logical_blit, draw as logical_draw, register_surface, scale_rect, unregister_surface
@@ -804,7 +804,7 @@ class DigitalTwinGame:
                 self.projectiles.extend(fired)
                 self.audio.play("shot")
         elif self.tutorial_step == 2 and mouse_buttons[2]:
-            hit, effect = self.player.melee(mouse_position, [target])
+            hit, effect = self.player.melee(mouse_position, [target], self.arena.has_line_of_sight)
             if effect:
                 self.effects.append(effect)
             if hit:
@@ -953,9 +953,8 @@ class DigitalTwinGame:
         self.arena_id = 5
         self.arena = Arena.from_layout(layout)
         self.player = self._create_player(layout.player_spawn)
-        self.enemies = [Enemy((x, y), kind) for x, y, kind in layout.enemy_spawns]
-        if not self.enemies:
-            self.enemies = [Enemy((self.arena.bounds.right - 140, self.arena.bounds.centery), "assault")]
+        self.player.position = self.arena.place_circle(self.player.position, self.player.radius)
+        self.enemies = self._create_custom_enemies()
         self.projectiles = []
         self.effects = []
         self.hazards = []
@@ -1067,7 +1066,7 @@ class DigitalTwinGame:
         elif ability == AbilityType.TELEPORT:
             direction = (mouse - self.player.position).normalize() if mouse.distance_squared_to(self.player.position) > 1 else self.player.facing
             old_position = self.player.position.copy()
-            self.player.position = self.arena.move_circle(self.player.position, direction * 235, self.player.radius)
+            self.player.position = self.arena.place_circle(self.player.position + direction * 235, self.player.radius)
             self.combat_fx.dash(old_position, COLORS["twin"], direction)
         elif ability == AbilityType.SHIELD:
             self.player.shield_timer = 2.8
@@ -1161,7 +1160,11 @@ class DigitalTwinGame:
                 self.audio.play("shot")
         if mouse_buttons[2]:
             health_before = {id(enemy): enemy.health for enemy in self.enemies if enemy.alive}
-            used, effect = self.player.melee(mouse_position, [enemy for enemy in self.enemies if enemy.alive])
+            used, effect = self.player.melee(
+                mouse_position,
+                [enemy for enemy in self.enemies if enemy.alive],
+                self.arena.has_line_of_sight,
+            )
             if effect:
                 self.effects.append(effect)
                 self.combat_fx.wave(self.player.position, COLORS["player"])
@@ -1384,9 +1387,7 @@ class DigitalTwinGame:
                         self._complete_custom_arena("Все противники уничтожены")
                     else:
                         layout = self.editor.layout
-                        self.enemies = [Enemy((x, y), kind) for x, y, kind in layout.enemy_spawns]
-                        if not self.enemies:
-                            self.enemies = [Enemy((self.arena.bounds.right - 140, self.arena.bounds.centery), "assault")]
+                        self.enemies = self._create_custom_enemies()
                         self.round_clear_timer = 0.0
                         self.player.health = min(self.player.max_health, self.player.health + 18)
                         self.notice = "НОВАЯ ВОЛНА"
@@ -1394,6 +1395,14 @@ class DigitalTwinGame:
         else:
             self.round_clear_timer = 0.0
             self.wave_counted = False
+
+    def _create_custom_enemies(self) -> list[Enemy]:
+        enemies = [Enemy((x, y), kind) for x, y, kind in self.editor.layout.enemy_spawns]
+        if not enemies:
+            enemies = [Enemy((self.arena.bounds.right - 140, self.arena.bounds.centery), "assault")]
+        for enemy in enemies:
+            enemy.position = self.arena.place_circle(enemy.position, enemy.radius)
+        return enemies
 
     def _complete_custom_arena(self, message: str) -> None:
         self.editor.message = message
@@ -1410,7 +1419,12 @@ class DigitalTwinGame:
             hit = False
             if projectile.owner == "player":
                 for enemy in self.enemies:
-                    if enemy.alive and enemy.position.distance_to(projectile.position) <= enemy.radius + projectile.radius:
+                    if enemy.alive and segment_intersects_circle(
+                        projectile.previous_position,
+                        projectile.position,
+                        enemy.position,
+                        enemy.radius + projectile.radius,
+                    ):
                         was_alive = enemy.alive
                         applied = enemy.take_damage(projectile.damage, self.player.position)
                         if self.state == "training":
@@ -1423,7 +1437,12 @@ class DigitalTwinGame:
                         self.audio.play("hit")
                         hit = True
                         break
-            elif self.player.alive and self.player.position.distance_to(projectile.position) <= self.player.radius + projectile.radius + 8:
+            elif self.player.alive and segment_intersects_circle(
+                projectile.previous_position,
+                projectile.position,
+                self.player.position,
+                self.player.radius + projectile.radius + 8,
+            ):
                 if self.player.reflect_timer > 0:
                     projectile.owner = "player"
                     projectile.velocity *= -1.18
