@@ -521,7 +521,12 @@ class DigitalTwinGame:
                 if self._player_continue_rect().collidepoint(event.pos):
                     self._confirm_player_selection()
             elif self.state == "profile" and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                self._open_confusion_example(event.pos)
+                for index, rect in enumerate(self._profile_action_rects()):
+                    if rect.collidepoint(event.pos):
+                        self._activate_profile_option(index)
+                        break
+                else:
+                    self._open_confusion_example(event.pos)
             elif self.state == "result" and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 for index, rect in enumerate(self._result_button_rects()):
                     if rect.collidepoint(event.pos):
@@ -575,6 +580,16 @@ class DigitalTwinGame:
     @staticmethod
     def _result_button_rects() -> list[pygame.Rect]:
         return [pygame.Rect(70 + index * 290, 575, 270, 46) for index in range(4)]
+
+    @staticmethod
+    def _profile_action_rects() -> list[pygame.Rect]:
+        return [pygame.Rect(205 + index * 450, 638, 420, 44) for index in range(2)]
+
+    def _activate_profile_option(self, index: int) -> None:
+        if index == 0:
+            self._start_twin_fight()
+        elif index == 1:
+            self.state = "model_analysis"
 
     def _activate_result_option(self, index: int) -> None:
         if index == 0:
@@ -2318,7 +2333,9 @@ class DigitalTwinGame:
             anchor="midtop",
         )
         draw_text(self.screen, self.analysis_notice or self.data_quality.warning, (WIDTH / 2, 608), 13, COLORS["muted"], anchor="midtop")
-        draw_text(self.screen, "ENTER — СОЗДАТЬ ДВОЙНИКА     •     A — ПОЛНЫЙ AI-АНАЛИЗ", (WIDTH / 2, 638), 20, COLORS["warning"], bold=True, anchor="midtop")
+        profile_actions = ["ENTER  СОЗДАТЬ ДВОЙНИКА", "A  ПОЛНЫЙ AI-АНАЛИЗ"]
+        for rect, label in zip(self._profile_action_rects(), profile_actions):
+            self._draw_action_button(rect, label)
         if self.model_metrics and hasattr(self.model_metrics, "sequence_length"):
             parameters = f"{getattr(self.model_metrics, 'parameter_count', 0):,}".replace(",", " ")
             rl_label = " • offline RL принято" if getattr(self.model_metrics, "rl_applied", False) else ""
@@ -2327,7 +2344,7 @@ class DigitalTwinGame:
             model_text = f"Резервная MLP 25–64–32–10 • точность {self.model_metrics.accuracy * 100:.1f}% • loss {self.model_metrics.loss:.3f}"
         else:
             model_text = "Используется внешняя модель прогнозирования"
-        draw_text(self.screen, model_text, (WIDTH / 2, 684), 14, COLORS["player"], anchor="midbottom")
+        draw_text(self.screen, model_text, (WIDTH / 2, 707), 14, COLORS["player"], anchor="midbottom")
 
     def _draw_model_training(self) -> None:
         self.animated_background.draw(self.screen, 0.82)

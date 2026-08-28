@@ -112,6 +112,15 @@ class ContractTests(unittest.TestCase):
             game._handle_events()
             self.assertEqual(game.state, expected_state)
 
+    def test_profile_actions_are_clickable(self) -> None:
+        for index, expected_state in enumerate(("twin", "model_analysis")):
+            game = DigitalTwinGame()
+            game.state = "profile"
+            click = game.viewport.logical_to_display(game._profile_action_rects()[index].center)
+            pygame.event.post(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"button": 1, "pos": click}))
+            game._handle_events()
+            self.assertEqual(game.state, expected_state)
+
     def test_player_name_accepts_text_input(self) -> None:
         game = DigitalTwinGame()
         game._open_player_select()
