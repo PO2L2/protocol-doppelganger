@@ -290,7 +290,7 @@ class TurretHazard:
             direction = safe_normalize(player.position - self.position)
             if direction.length_squared():
                 projectiles.append(Projectile(self.position + direction * 18, direction * 410, 8, "enemy", COLORS["warning"], radius=5))
-                self.cooldown = 1.15
+                self.cooldown = 0.9
         return self.lifetime > 0
 
     def draw(self, surface: pygame.Surface) -> None:
@@ -438,7 +438,7 @@ class Enemy:
         }
         preferred = preferred_by_kind.get(self.kind, 330)
         speed = speed_by_kind.get(self.kind, 175) if self.kind != "twin" else 220 + synchronization * 28
-        ranged_chance = 0.65 if self.kind in ("shooter", "engineer") else 0.22
+        ranged_chance = 0.78 if self.kind in ("shooter", "engineer") else 0.32
         if self.kind == "sniper":
             ranged_chance = 1.0
         if self.slow_timer > 0:
@@ -447,7 +447,7 @@ class Enemy:
             preferred = 135 + self.profile.preferred_range * 350
             ranged = self.profile.action_rates[PlayerAction.RANGED_ATTACK]
             melee = self.profile.action_rates[PlayerAction.MELEE_ATTACK]
-            ranged_chance = 0.3 + 0.55 * (ranged / max(0.01, ranged + melee))
+            ranged_chance = 0.38 + 0.58 * (ranged / max(0.01, ranged + melee))
             speed += self.profile.mobility * 25
 
         perpendicular = pygame.Vector2(-direction.y, direction.x) * self.strafe_sign
@@ -560,7 +560,7 @@ class Enemy:
             projectiles.append(
                 Projectile(self.position + self.queued_direction * 24, self.queued_direction * speed, damage, "enemy", self.color)
             )
-            self.attack_cooldown = 1.8 if self.kind == "sniper" else (0.72 if self.kind == "twin" else 1.02)
+            self.attack_cooldown = 1.25 if self.kind == "sniper" else (0.56 if self.kind == "twin" else 0.78)
         self.attack_flash = 0.14
         self.queued_attack = None
 

@@ -379,6 +379,17 @@ class ContractTests(unittest.TestCase):
             end = pygame.Vector2(call.args[3])
             self.assertLess(start.distance_to(end), 100)
 
+    def test_enemy_ranged_attacks_use_shorter_cooldowns(self) -> None:
+        player = Player((200, 400))
+        expected_cooldowns = {"sniper": 1.25, "twin": 0.56, "shooter": 0.78}
+        for kind, expected in expected_cooldowns.items():
+            enemy = Enemy((700, 400), kind)
+            projectiles = []
+            enemy._queue_attack("ranged", pygame.Vector2(-1, 0), 0.1)
+            enemy._release_attack(player, projectiles, 0.0)
+            self.assertEqual(len(projectiles), 1)
+            self.assertAlmostEqual(enemy.attack_cooldown, expected)
+
     def test_expired_timer_waits_for_remaining_enemies(self) -> None:
         game = DigitalTwinGame()
         game._start_session()
