@@ -987,6 +987,7 @@ class DigitalTwinGame:
         self.arena_id = 5
         self.arena = Arena.from_layout(layout)
         self.player = self._create_player(layout.player_spawn)
+        self.player.set_weapon(self.editor.player_weapon)
         self.player.position = self.arena.place_circle(self.player.position, self.player.radius)
         self.enemies = self._create_custom_enemies()
         self.projectiles = []

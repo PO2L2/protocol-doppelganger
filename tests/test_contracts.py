@@ -19,7 +19,7 @@ from digital_twin_game.data import ActionOutcome, GameplayDataCollector, Trainin
 from digital_twin_game.data_quality import analyze_data_quality
 from digital_twin_game.calibration import CalibrationChallenge
 from digital_twin_game.entities import Enemy, Player, Projectile, segment_intersects_circle
-from digital_twin_game.editor import ArenaEditor, ArenaLayout
+from digital_twin_game.editor import WALL_LENGTHS, ArenaEditor, ArenaLayout
 from digital_twin_game.features import build_feature_vector
 from digital_twin_game.game import DigitalTwinGame
 from digital_twin_game.hidpi import draw as logical_draw, register_surface, unregister_surface
@@ -460,6 +460,14 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(loaded.game_mode, "hold")
         self.assertEqual(loaded.objective_position, (640, 420))
 
+    def test_editor_layout_keeps_selected_weapon(self) -> None:
+        layout = ArenaLayout(player_weapon=WeaponType.RAIL.value)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "arena.json"
+            layout.save(path)
+            loaded = ArenaLayout.load(path)
+        self.assertEqual(loaded.player_weapon, WeaponType.RAIL.value)
+
     def test_editor_rotates_selected_wall(self) -> None:
         editor = ArenaEditor(ArenaLayout(obstacles=[(200, 200, 160, 40)]))
         editor.selected_obstacle = 0
@@ -474,6 +482,34 @@ class ContractTests(unittest.TestCase):
         editor = ArenaEditor()
         preview = editor.wall_preview_rect(logical_mouse)
         self.assertEqual(preview.center, (1000, 400))
+
+    def test_editor_stacks_vertical_walls_at_the_arena_edge(self) -> None:
+        for index, length in enumerate(WALL_LENGTHS):
+            editor = ArenaEditor()
+            editor.wall_vertical = True
+            editor.wall_length_index = index
+            editor._place((80, 100))
+            editor._place((80, 90 + length))
+            self.assertEqual(len(editor.layout.obstacles), 2)
+            first, second = map(pygame.Rect, editor.layout.obstacles)
+            self.assertEqual(first.left, second.left)
+            self.assertEqual(first.bottom, second.top)
+            self.assertFalse(first.colliderect(second))
+
+    def test_editor_weapon_button_cycles_weapon(self) -> None:
+        editor = ArenaEditor()
+        event = pygame.event.Event(
+            pygame.MOUSEBUTTONDOWN,
+            {"button": 1, "pos": editor.weapon_button_rect.center},
+        )
+        editor.handle_event(event)
+        self.assertEqual(editor.player_weapon, WeaponType.SHOTGUN)
+
+    def test_custom_arena_uses_editor_weapon(self) -> None:
+        game = DigitalTwinGame()
+        game.editor.layout.player_weapon = WeaponType.RAIL.value
+        game._start_custom_arena()
+        self.assertEqual(game.player.weapon, WeaponType.RAIL)
 
     def test_editor_keeps_point_objects_inside_arena(self) -> None:
         editor = ArenaEditor()
