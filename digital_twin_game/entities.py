@@ -11,7 +11,7 @@ from .hidpi import draw as logical_draw
 from .actions import PlayerAction
 from .arena import Arena
 from .behavior import BehaviorProfile
-from .config import COLORS, HEIGHT, PLAYER_MAX_ENERGY, PLAYER_MAX_HEALTH, PLAYER_RADIUS, PLAYER_SPEED, WIDTH
+from .config import COLORS, PLAYER_MAX_ENERGY, PLAYER_MAX_HEALTH, PLAYER_RADIUS, PLAYER_SPEED
 from .weapons import WeaponType, weapon_spec
 
 
@@ -409,11 +409,12 @@ class Enemy:
         self.facing = direction
 
         if self.attack_windup > 0:
-            self.velocity.update(0, 0)
             self.attack_windup -= dt
             if self.attack_windup <= 0:
                 self._release_attack(player, projectiles, synchronization, arena=arena)
-            return
+            if self.queued_attack == "melee":
+                self.velocity.update(0, 0)
+                return
 
         preferred_by_kind = {
             "hunter": 155,
@@ -501,7 +502,7 @@ class Enemy:
         self.velocity = safe_normalize(move) * speed
         self.position = arena.move_circle(self.position, self.velocity * dt, self.radius)
 
-        if self.attack_cooldown > 0 or not arena.has_line_of_sight(self.position, player.position):
+        if self.attack_windup > 0 or self.attack_cooldown > 0 or not arena.has_line_of_sight(self.position, player.position):
             return
         if distance < 68:
             duration = 0.25 if self.kind == "assault" else (0.38 if self.kind == "twin" else 0.48)
@@ -569,11 +570,6 @@ class Enemy:
             warning_color = COLORS["warning"] if progress < 0.7 else COLORS["enemy"]
             if self.queued_attack == "melee":
                 logical_draw.circle(surface, warning_color, self.position, 72, 2 + int(progress * 3))
-            else:
-                target = self.position + self.queued_direction * 560
-                clipped = (bounds or pygame.Rect(0, 0, WIDTH, HEIGHT)).clipline(self.position, target)
-                if clipped:
-                    logical_draw.line(surface, warning_color, clipped[0], clipped[1], 2 + int(progress * 2))
         color = COLORS["white"] if self.recent_damage > 0 else self.color
         logical_draw.circle(surface, tuple(max(0, component // 3) for component in self.color), self.position, self.radius + 7)
         logical_draw.circle(surface, color, self.position, self.radius)

@@ -351,6 +351,34 @@ class ContractTests(unittest.TestCase):
         enemy.update(0.6, player, arena, projectiles)
         self.assertLess(player.health, original_health)
 
+    def test_enemy_keeps_moving_during_ranged_windup(self) -> None:
+        arena = Arena(1)
+        arena.obstacles = []
+        arena.destructibles = []
+        player = Player((200, 400))
+        enemy = Enemy((900, 400), "sniper")
+        enemy._queue_attack("ranged", pygame.Vector2(-1, 0), 0.8)
+        original_position = enemy.position.copy()
+        projectiles = []
+        enemy.update(0.1, player, arena, projectiles)
+        self.assertNotEqual(enemy.position, original_position)
+        self.assertGreater(enemy.velocity.length(), 0)
+        self.assertFalse(projectiles)
+        for _ in range(8):
+            enemy.update(0.1, player, arena, projectiles)
+        self.assertTrue(projectiles)
+
+    def test_enemy_ranged_windup_has_no_trajectory_line(self) -> None:
+        enemy = Enemy((600, 400), "sniper")
+        enemy._queue_attack("ranged", pygame.Vector2(-1, 0), 0.8)
+        surface = pygame.Surface((1280, 720))
+        with patch("digital_twin_game.entities.logical_draw.line") as draw_line:
+            enemy.draw(surface, pygame.Rect(0, 0, 1280, 720))
+        for call in draw_line.call_args_list:
+            start = pygame.Vector2(call.args[2])
+            end = pygame.Vector2(call.args[3])
+            self.assertLess(start.distance_to(end), 100)
+
     def test_expired_timer_waits_for_remaining_enemies(self) -> None:
         game = DigitalTwinGame()
         game._start_session()
