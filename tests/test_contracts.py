@@ -41,7 +41,7 @@ from digital_twin_game.sequence_data import (
 from digital_twin_game.torch_model import TorchSequenceModel, torch_available
 from digital_twin_game.tournament import TournamentFighter, TournamentMatch
 from digital_twin_game.viewport import DisplayViewport, SUPPORTED_DISPLAY_SIZES
-from digital_twin_game.weapons import WeaponType
+from digital_twin_game.weapons import WeaponType, weapon_spec
 
 
 class ContractTests(unittest.TestCase):
@@ -485,6 +485,15 @@ class ContractTests(unittest.TestCase):
         player.set_weapon(WeaponType.SHOTGUN)
         projectiles = player.fire(pygame.Vector2(500, 300))
         self.assertEqual(len(projectiles), 5)
+
+    def test_blades_use_weaker_balanced_values(self) -> None:
+        blades = weapon_spec(WeaponType.BLADES)
+        shotgun = weapon_spec(WeaponType.SHOTGUN)
+        pulse = weapon_spec(WeaponType.PULSE)
+        self.assertLessEqual(blades.melee_damage, shotgun.melee_damage)
+        self.assertLessEqual(blades.melee_range, shotgun.melee_range + 2)
+        self.assertGreaterEqual(blades.melee_cooldown, 0.48)
+        self.assertLess(blades.ranged_damage, pulse.ranged_damage)
 
     def test_melee_hits_enemy_while_models_overlap(self) -> None:
         player = Player((500, 350))

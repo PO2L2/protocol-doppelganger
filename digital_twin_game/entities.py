@@ -174,7 +174,7 @@ class Player:
 
     def melee(self, target: pygame.Vector2, enemies: list[Enemy], line_of_sight=None) -> tuple[bool, SlashEffect | None]:
         spec = weapon_spec(self.weapon)
-        melee_cost = 13 if self.weapon == WeaponType.BLADES else 15
+        melee_cost = spec.melee_energy_cost
         if self.melee_cooldown > 0 or self.energy < melee_cost:
             return False, None
         direction = safe_normalize(target - self.position)
@@ -198,7 +198,7 @@ class Player:
         if direction.length_squared():
             self.facing = direction
         self.energy -= melee_cost
-        self.melee_cooldown = (0.38 if self.weapon == WeaponType.BLADES else 0.62) * self.cooldown_multiplier
+        self.melee_cooldown = spec.melee_cooldown * self.cooldown_multiplier
         self.last_action = PlayerAction.MELEE_ATTACK
         hit = False
         for enemy in candidates:
