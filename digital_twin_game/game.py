@@ -522,6 +522,11 @@ class DigitalTwinGame:
                     self._confirm_player_selection()
             elif self.state == "profile" and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 self._open_confusion_example(event.pos)
+            elif self.state == "result" and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                for index, rect in enumerate(self._result_button_rects()):
+                    if rect.collidepoint(event.pos):
+                        self._activate_result_option(index)
+                        break
             elif self.state == "tutorial" and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 back, forward = self._tutorial_navigation_rects()
                 if back.collidepoint(event.pos):
@@ -566,6 +571,20 @@ class DigitalTwinGame:
     @staticmethod
     def _tutorial_navigation_rects() -> tuple[pygame.Rect, pygame.Rect]:
         return pygame.Rect(105, 635, 210, 52), pygame.Rect(WIDTH - 315, 635, 210, 52)
+
+    @staticmethod
+    def _result_button_rects() -> list[pygame.Rect]:
+        return [pygame.Rect(70 + index * 290, 575, 270, 46) for index in range(4)]
+
+    def _activate_result_option(self, index: int) -> None:
+        if index == 0:
+            self._open_weapon_select()
+        elif index == 1:
+            self._start_replay()
+        elif index == 2:
+            self._open_lab()
+        elif index == 3:
+            self.state = "menu"
 
     def _activate_menu_option(self, index: int) -> None:
         if index == 0:
@@ -2452,12 +2471,14 @@ class DigitalTwinGame:
         self._draw_heatmap(heatmap_rect)
         draw_text(self.screen, "редко", (heatmap_rect.left, heatmap_rect.bottom + 10), 14, COLORS["muted"])
         draw_text(self.screen, "часто", (heatmap_rect.right, heatmap_rect.bottom + 10), 14, COLORS["player"], anchor="topright")
-        draw_text(self.screen, "R Новая сессия   •   V Повтор   •   L Лаборатория   •   ESC Меню", (WIDTH / 2, 586), 20, COLORS["warning"], bold=True, anchor="midtop")
+        button_labels = ["R  НОВАЯ СЕССИЯ", "V  ПОВТОР", "L  ЛАБОРАТОРИЯ", "ESC  МЕНЮ"]
+        for rect, label in zip(self._result_button_rects(), button_labels):
+            self._draw_action_button(rect, label)
         average_confidence = sum(self.prediction_confidences) / len(self.prediction_confidences) if self.prediction_confidences else 0.0
         analysis_line = f"Живой анализ: точность {self.synchronization * 100:.1f}% • средняя уверенность {average_confidence * 100:.1f}% • ошибок {len(self.sync_history) - sum(self.sync_history)}"
-        draw_text(self.screen, analysis_line, (WIDTH / 2, 620), 15, COLORS["player"], anchor="midtop")
+        draw_text(self.screen, analysis_line, (WIDTH / 2, 635), 15, COLORS["player"], anchor="midtop")
         if self.saved_paths:
-            draw_text(self.screen, f"Данные сохранены: data/{self.saved_paths[0].name}", (WIDTH / 2, 650), 14, COLORS["muted"], anchor="midtop")
+            draw_text(self.screen, f"Данные сохранены: data/{self.saved_paths[0].name}", (WIDTH / 2, 665), 14, COLORS["muted"], anchor="midtop")
 
     def _draw_replay(self) -> None:
         self.screen.fill(COLORS["background"])
