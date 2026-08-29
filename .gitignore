@@ -25,6 +25,7 @@ models/*
 htmlcov/
 dist/
 build/
+*.spec
 
 # Системные файлы
 .DS_Store

@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 
 TITLE = "Протокол: Двойник"
@@ -20,9 +21,23 @@ TRAINING_ROUND_SECONDS = 35.0
 TWIN_INTRO_SECONDS = 2.8
 SYNC_WINDOW_SAMPLES = 30
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = ROOT_DIR / "data"
-MODEL_DIR = ROOT_DIR / "models"
+def resolve_runtime_directories(
+    *,
+    frozen: bool,
+    executable: str | Path,
+    source_file: str | Path,
+) -> tuple[Path, Path, Path]:
+    """Keep portable-build saves beside the executable instead of PyInstaller's temporary folder."""
+    root = Path(executable).resolve().parent if frozen else Path(source_file).resolve().parent.parent
+    data = root / ("ДАННЫЕ_ДЛЯ_ОТПРАВКИ" if frozen else "data")
+    return root, data, root / "models"
+
+
+ROOT_DIR, DATA_DIR, MODEL_DIR = resolve_runtime_directories(
+    frozen=bool(getattr(sys, "frozen", False)),
+    executable=sys.executable,
+    source_file=__file__,
+)
 
 COLORS = {
     "background": (8, 12, 24),

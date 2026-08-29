@@ -18,6 +18,7 @@ from digital_twin_game.behavior import BehaviorProfile
 from digital_twin_game.data import ActionOutcome, GameplayDataCollector, TrainingSample
 from digital_twin_game.data_quality import analyze_data_quality
 from digital_twin_game.calibration import CalibrationChallenge
+from digital_twin_game.config import resolve_runtime_directories
 from digital_twin_game.entities import Enemy, Player, Projectile, segment_intersects_circle
 from digital_twin_game.editor import WALL_LENGTHS, ArenaEditor, ArenaLayout
 from digital_twin_game.features import build_feature_vector
@@ -650,6 +651,26 @@ class ContractTests(unittest.TestCase):
         self.assertIn("(3, 10) <= sys.version_info[:2] <= (3, 13)", launcher)
         self.assertIn("Python 3.14 is not supported", launcher)
         self.assertNotIn("pip install -r requirements.txt", launcher)
+
+    def test_frozen_build_writes_dataset_beside_executable(self) -> None:
+        root, data, models = resolve_runtime_directories(
+            frozen=True,
+            executable=r"C:\PortableGame\Protocol-Doppelganger.exe",
+            source_file=__file__,
+        )
+        self.assertEqual(root, Path(r"C:\PortableGame"))
+        self.assertEqual(data, root / "ДАННЫЕ_ДЛЯ_ОТПРАВКИ")
+        self.assertEqual(models, root / "models")
+
+    def test_source_run_keeps_existing_project_data_folder(self) -> None:
+        root, data, models = resolve_runtime_directories(
+            frozen=False,
+            executable=r"C:\Python\python.exe",
+            source_file=r"C:\Project\digital_twin_game\config.py",
+        )
+        self.assertEqual(root, Path(r"C:\Project"))
+        self.assertEqual(data, root / "data")
+        self.assertEqual(models, root / "models")
 
     def test_interactive_tutorial_starts_after_pages(self) -> None:
         game = DigitalTwinGame()
